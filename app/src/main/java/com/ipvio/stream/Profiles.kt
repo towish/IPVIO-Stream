@@ -52,7 +52,7 @@ object Profiles {
     /** Files that are separate per profile. */
     private val SCOPED = listOf(
         "ipvio_settings", "ipvio_lib", "ipvio_quality", "ipvio_hist", "ipvio_watch", "ipvio_catfavs",
-        "ipvio_variants", "ipvio_guide", "ipvio_browse", "ipvio_cat", "ipvio_general", "ipvio_lang",
+        "ipvio_variants", "ipvio_guide", "ipvio_guidecoll", "ipvio_browse", "ipvio_cat", "ipvio_general", "ipvio_lang",
         "ipvio_chlists", "ipvio_tracks", "ipvio_eprog"
     )
 

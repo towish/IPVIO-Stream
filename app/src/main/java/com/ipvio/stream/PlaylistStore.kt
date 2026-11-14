@@ -530,11 +530,17 @@ object PlaylistStore {
         }
     }
 
+    /** Favorites survive the language filter: their IDs are kept while parsing and reading the cache. */
+    private fun keepFavIds(c: Context): Set<String> {
+        Library.init(c)
+        return Library.favs.toSet()
+    }
+
     private fun readCache(c: Context, url: String, hidden: Set<String>): PlaylistCacheIO.Cached? {
         val f = cacheFile(c, url)
         if (!f.exists()) return null
         return try {
-            BufferedInputStream(FileInputStream(f), 1 shl 16).use { PlaylistCacheIO.read(it, url, hidden, guard(askable = false)) }
+            BufferedInputStream(FileInputStream(f), 1 shl 16).use { PlaylistCacheIO.read(it, url, hidden, guard(askable = false), keepFavIds(c)) }
         } catch (e: ParseStop) {
             null
         } catch (e: CancellationException) {
@@ -845,7 +851,7 @@ object PlaylistStore {
             }
         }
         phase = "Titel werden eingelesen …"
-        val parsed = readFile(src, gz, cs, teeTo) { r -> M3uParser.parseStream(r, hidden, guard()) }
+        val parsed = readFile(src, gz, cs, teeTo) { r -> M3uParser.parseStream(r, hidden, guard(), keepFavIds(c)) }
         return Built(parsed, hidden)
     }
 

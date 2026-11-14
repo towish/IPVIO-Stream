@@ -59,6 +59,18 @@ TV-Guide – Ansicht¦TV guide – view¦TV rehberi – görünüm¦TV vodič �
 Zoom¦Zoom¦Yakınlaştırma¦Zum¦Zum¦Zum¦Zoom¦Zoom¦Zoom
 Zeilenhöhe¦Row height¦Satır yüksekliği¦Visina reda¦Visina reda¦Visina reda¦Altura de fila¦Hauteur de ligne¦Altezza riga
 Vergangene Sendungen¦Past programs¦Geçmiş programlar¦Prošle emisije¦Prošle emisije¦Prošle emisije¦Programas pasados¦Programmes passés¦Programmi passati
+Nur Sender mit Programm¦Only channels with a guide¦¦¦¦¦¦Seulement les chaînes avec guide¦
+Sammlungen¦Collections¦¦¦¦¦¦Collections¦
+Verwalten¦Manage¦¦¦¦¦¦Gérer¦
+Neue Sammlung¦New collection¦¦¦¦¦¦Nouvelle collection¦
+Bearbeiten¦Edit¦¦¦¦¦¦Modifier¦
+Stichwörter im Sendernamen¦Keywords in channel name¦¦¦¦¦¦Mots-clés dans le nom de chaîne¦
+Stichwörter in der Kategorie¦Keywords in category¦¦¦¦¦¦Mots-clés dans la catégorie¦
+Stichwörter, getrennt durch Kommas¦Keywords, separated by commas¦¦¦¦¦¦Mots-clés, séparés par des virgules¦
+Ein¦On¦¦¦¦¦¦Activé¦
+Keine Sammlungen¦No collections yet¦¦¦¦¦¦Aucune collection¦
+Sortierung¦Sort order¦¦¦¦¦¦Tri¦
+Eine Sammlung fasst Sender nach Stichwörtern zusammen – zum Beispiel alle Québec-Sender, egal in welcher Kategorie des Anbieters sie stehen. Ein Stichwort trifft, wenn ein Wort im Namen damit beginnt.¦A collection groups channels by keywords – for example all Québec channels, no matter which provider category they are in. A keyword matches when a word in the name starts with it.¦¦¦¦¦¦Une collection regroupe des chaînes par mots-clés — par exemple toutes les chaînes du Québec, peu importe la catégorie du fournisseur. Un mot-clé correspond quand un mot du nom commence par lui.¦
 Zurück = schließen¦Back = close¦Geri = kapat¦Nazad = zatvori¦Natrag = zatvori¦Nazad = zatvori¦Atrás = cerrar¦Retour = fermer¦Indietro = chiudi
 Menü-Taste im TV-Guide = Zoom¦Menu key in the TV guide = zoom¦TV rehberinde Menü tuşu = yakınlaştırma¦Tipka Meni u TV vodiču = zum¦Tipka Izbornik u TV vodiču = zum¦Taster Meni u TV vodiču = zum¦Tecla Menú en la guía de TV = zoom¦Touche Menu dans le guide TV = zoom¦Tasto Menu nella guida TV = zoom
 Zeitzone {0} (änderbar unter Einstellungen > Sprache & Region)¦Time zone {0} (change under Settings > Language & region)¦Saat dilimi {0} (Ayarlar > Dil ve bölge altında değiştirilebilir)¦Vremenska zona {0} (mijenja se u Postavke > Jezik i regija)¦Vremenska zona {0} (mijenja se u Postavke > Jezik i regija)¦Vremenska zona {0} (menja se u Podešavanja > Jezik i region)¦Zona horaria {0} (se cambia en Ajustes > Idioma y región)¦Fuseau horaire {0} (modifiable dans Réglages > Langue et région)¦Fuso orario {0} (modificabile in Impostazioni > Lingua e regione)

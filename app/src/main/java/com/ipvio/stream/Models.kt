@@ -281,8 +281,8 @@ object M3uParser {
     fun parse(text: String): List<Item> = parseLines(text.lineSequence()).items
 
     /** Reads line by line from a Reader. This way the whole list never has to sit in memory as a single String. */
-    fun parseStream(reader: java.io.Reader, hidden: Set<String> = emptySet(), check: (() -> Unit)? = null): ParsedPlaylist =
-        LinePump(reader).use { parseLines(it.lines(), hidden, check) }
+    fun parseStream(reader: java.io.Reader, hidden: Set<String> = emptySet(), check: (() -> Unit)? = null, keepIds: Set<String> = emptySet()): ParsedPlaylist =
+        LinePump(reader).use { parseLines(it.lines(), hidden, check, keepIds) }
 
     /** Quick pass without creating titles: how many titles and how much data per language (for the language selection). */
     fun scanStream(reader: java.io.Reader, check: (() -> Unit)? = null): PlaylistScan =
@@ -349,6 +349,12 @@ object M3uParser {
             if (k == i) i = name.indexOf('S', k + 1) else j = name.indexOf('s', k + 1)
         }
         return false
+    }
+
+    /** ID the entry would get as an Item: favorites keep their entry even when their language is hidden. */
+    private fun keepId(e: Entry, kd: Kinded): String = when (kd.kind) {
+        Kind.SERIES -> "s_" + clean(kd.se?.groupValues?.get(1) ?: e.name).lowercase()
+        else -> e.url.hashCode().toString()
     }
 
     /** Kind and language of an entry; counts it in [st]. null = separator, skipped. */
@@ -421,9 +427,10 @@ object M3uParser {
     /**
      * Reads the list in one pass. Hidden languages ([hidden]) are only counted but not created –
      * so a list with 800,000 entries needs only as much memory as the chosen languages.
+     * [keepIds] = entries that are created anyway (favorites: they stay visible even when their language is hidden).
      * [check] is called every 2,000 entries (progress, abort, memory guard).
      */
-    fun parseLines(lines: Sequence<String>, hidden: Set<String> = emptySet(), check: (() -> Unit)? = null): ParsedPlaylist {
+    fun parseLines(lines: Sequence<String>, hidden: Set<String> = emptySet(), check: (() -> Unit)? = null, keepIds: Set<String> = emptySet()): ParsedPlaylist {
         val pool = StringPool()
         val langOf = LangOf(pool)
         val st = Stats()
@@ -435,7 +442,7 @@ object M3uParser {
 
         entries(lines, check, onHeader = { header = it; headCu = CatchupLogic.fromInfo(it, "") }) { e ->
             val kd = classify(e, st, langOf) ?: return@entries
-            if (LangTagLogic.hides(hidden, kd.lang, kd.kind)) return@entries
+            if (LangTagLogic.hides(hidden, kd.lang, kd.kind) && keepId(e, kd) !in keepIds) return@entries
             val group = pool.of(e.group)
             val q = quality(e.name, e.group)
             when (kd.kind) {
