@@ -602,8 +602,18 @@ private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Mo
                 }
             }
             // The whole width belongs to the description (the "Next shows" column was dropped at the user's request)
-            if (e.desc.isNotBlank()) Text(raw = true, text = e.desc, color = DS.TextSoft, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            if (e.desc.isNotBlank()) Text(raw = true, text = e.desc, color = DS.TextSoft, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
+        }
+        // Picture of the show from the XMLTV feed, if any (lazy load: only the shown show fetches its image)
+        val icon = e?.icon
+        if (icon != null) {
+            Box(
+                Modifier.fillMaxHeight().width(220.dp).clip(RoundedCornerShape(DS.RadiusS)).background(DS.Overlay2),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(icon, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
         }
     }
 }
