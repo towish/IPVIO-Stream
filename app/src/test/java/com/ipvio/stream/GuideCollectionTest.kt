@@ -121,4 +121,49 @@ http://h/live/trt.ts
         GuideCollectionLogic.buildCache(all)
         assertTrue(GuideCollectionLogic.cacheReady(all))
     }
+
+    private val sports = listOf(
+        ch("s1", "RDS", "CA | Sports"),
+        ch("s2", "TSN 2", "CA | Sports"),
+        ch("s3", "Sportsnet One", "CA | Sports"),
+        ch("s4", "TVA Sports", "CA | Sports"),
+        ch("s5", "NHL Network", "US | Sports"),
+        ch("s6", "Golf Channel", "US | Sports"),
+        ch("s7", "NFL Network", "US | Sports"),
+        ch("s8", "NBA TV", "US | Sports"),
+        ch("s9", "MLB Network", "US | Sports"),
+        ch("s10", "beIN Sports", "US | Soccer"),
+        ch("s11", "F1 TV", "US | Sports"),
+        ch("s12", "Tennis Channel", "US | Sports"),
+        ch("s13", "TVA Nouvelles", "CA | News"),
+        ch("s14", "ZDF", "DE | News")
+    )
+
+    @Test fun sportSammlungenTreffen() {
+        val defs = GuideCollectionLogic.defaultCollections().associateBy { it.name }
+        fun titles(name: String) = GuideCollectionLogic.itemsOf(defs.getValue(name), sports).map { it.title }
+        assertEquals(listOf("RDS", "Sportsnet One", "TSN 2", "TVA Sports"), titles("Sports Canada"))
+        assertEquals(listOf("NHL Network"), titles("NHL"))
+        assertEquals(listOf("Golf Channel"), titles("Golf"))
+        assertEquals(listOf("NFL Network"), titles("NFL"))
+        assertEquals(listOf("NBA TV"), titles("NBA"))
+        assertEquals(listOf("MLB Network"), titles("Baseball"))
+        assertEquals(listOf("beIN Sports"), titles("Soccer"))
+        assertEquals(listOf("F1 TV"), titles("Course auto"))
+        assertEquals(listOf("Tennis Channel"), titles("Tennis"))
+        assertFalse("TVA Nouvelles" in titles("Sports Canada"))
+        assertFalse("ZDF" in titles("NHL"))
+    }
+
+    @Test fun alteListeWirdUmSportErgaenzt() {
+        val onlyQuebec = listOf(quebec)
+        val migrated = GuideCollectionLogic.migrateDefaults(onlyQuebec)
+        assertEquals(10, migrated.size)
+        assertEquals(listOf("Postes québécois", "Sports Canada", "NHL", "Golf", "NFL", "NBA", "Baseball", "Soccer", "Course auto", "Tennis"), migrated.map { it.name })
+        // Already upgraded, or Quebec deleted: left alone
+        assertEquals(migrated, GuideCollectionLogic.migrateDefaults(migrated))
+        val custom = listOf(quebec, CollectionDef(2, "Perso", "📺", listOf("x"), emptyList(), 0))
+        assertEquals(custom, GuideCollectionLogic.migrateDefaults(custom))
+        assertEquals(emptyList<CollectionDef>(), GuideCollectionLogic.migrateDefaults(emptyList()))
+    }
 }

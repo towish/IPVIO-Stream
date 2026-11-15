@@ -61,6 +61,70 @@ object GuideCollectionLogic {
         return false
     }
 
+    /** The collections a fresh install starts with: Quebec channels, then the sports ones. */
+    fun defaultCollections(): List<CollectionDef> = listOf(
+        CollectionDef(
+            1, "Postes québécois", "⚜",
+            listOf("tva", "radio-canada", "tele-quebec", "noovo", "lcn", "rdi", "rds", "canal d"),
+            listOf("quebec"), 0
+        ),
+        CollectionDef(
+            2, "Sports Canada", "🇨🇦",
+            listOf("rds", "tsn", "sportsnet", "tva sports"),
+            listOf("ca sports"), 0
+        ),
+        CollectionDef(
+            3, "NHL", "🏒",
+            listOf("nhl", "hockey"),
+            listOf("nhl"), 0
+        ),
+        CollectionDef(
+            4, "Golf", "⛳",
+            listOf("golf"),
+            listOf("golf"), 0
+        ),
+        CollectionDef(
+            5, "NFL", "🏈",
+            listOf("nfl"),
+            listOf("nfl"), 0
+        ),
+        CollectionDef(
+            6, "NBA", "🏀",
+            listOf("nba", "basketball"),
+            listOf("nba"), 0
+        ),
+        CollectionDef(
+            7, "Baseball", "⚾",
+            listOf("mlb", "baseball"),
+            listOf("mlb"), 0
+        ),
+        CollectionDef(
+            8, "Soccer", "⚽",
+            listOf("soccer", "futbol"),
+            listOf("soccer"), 0
+        ),
+        CollectionDef(
+            9, "Course auto", "🏎️",
+            listOf("f1", "nascar", "racing"),
+            listOf("f1", "nascar"), 0
+        ),
+        CollectionDef(
+            10, "Tennis", "🎾",
+            listOf("tennis"),
+            listOf("tennis"), 0
+        )
+    )
+
+    /**
+     * Upgrade a stored list that only has the first default collection (Quebec, id 1)
+     * with the sports collections added later (ids 2+). Lists the user already edited
+     * (Quebec deleted, or a collection with id >= 2 present) are left alone.
+     */
+    fun migrateDefaults(list: List<CollectionDef>): List<CollectionDef> {
+        if (list.none { it.id == 1 } || list.any { it.id >= 2 }) return list
+        return list + defaultCollections().drop(1)
+    }
+
     /** Channels of the collection, in its sort order (name A–Z, or playlist order). Empty without keywords. */
     fun itemsOf(c: CollectionDef, all: List<Item>): List<Item> {
         val nk = c.nameKeywords.map { words(fold(it)) }.filter { it.isNotEmpty() }
@@ -165,20 +229,15 @@ object GuideCollections {
         val p = prefs(c)
         // First run only (no key yet): one collection to start with. Deleting every collection stays deleted.
         if (!p.contains("l")) {
-            list.addAll(defaultCollections())
+            list.addAll(GuideCollectionLogic.defaultCollections())
             save(c)
         } else {
-            list.addAll(GuideCollectionLogic.decode(p.getString("l", null)))
+            val stored = GuideCollectionLogic.decode(p.getString("l", null))
+            val migrated = GuideCollectionLogic.migrateDefaults(stored)
+            list.addAll(migrated)
+            if (migrated !== stored) save(c)
         }
     }
-
-    private fun defaultCollections(): List<CollectionDef> = listOf(
-        CollectionDef(
-            1, "Postes québécois", "⚜",
-            listOf("tva", "radio-canada", "tele-quebec", "noovo", "lcn", "rdi", "rds", "canal d"),
-            listOf("quebec"), 0
-        )
-    )
 
     private fun save(c: Context) {
         prefs(c).edit().putString("l", GuideCollectionLogic.encode(list.toList())).apply()
