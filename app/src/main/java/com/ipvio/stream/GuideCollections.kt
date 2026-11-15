@@ -28,6 +28,8 @@ object GuideCollectionLogic {
     const val MAX_NAME = 40
     const val MAX_KEYWORDS = 200
 
+    private val MARK = Regex("\\p{M}")
+
     fun cleanName(n: String): String = n.replace(Regex("[\\t\\n\\r]"), " ").trim().take(MAX_NAME)
     fun cleanEmoji(e: String): String = e.replace(Regex("[\\t\\n\\r]"), "").trim().take(6)
 
@@ -37,7 +39,7 @@ object GuideCollectionLogic {
 
     /** Lowercase, accents stripped, anything else becomes a space (word separator). */
     fun fold(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}"), "")
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARK, "")
             .lowercase(java.util.Locale.ROOT).map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("")
 
     private fun words(folded: String): List<String> = folded.split(' ').filter { it.isNotEmpty() }
@@ -74,6 +76,59 @@ object GuideCollectionLogic {
         return if (c.sort == 1) l else l.sortedBy { fold(it.title) }
     }
 
+    // ------------------------------------------------------------------ Fold cache
+    // Matching folds every channel title (Normalizer + regex) – on a list of 16,000 channels
+    // that blocks the main thread for seconds at guide open, until Android kills the app.
+    // So the folds are built once per list off the main thread, and the guide opens at once
+    // (without collections); the collections appear when the scan finishes.
+
+    /** Folded words per channel id, folded title for sorting, folded words per provider group. */
+    private var cacheList: List<Item>? = null
+    private val titleWords = HashMap<String, List<String>>()
+    private val titleFolded = HashMap<String, String>()
+    private val groupWords = HashMap<String, List<String>>()
+
+    /** True when the fold cache was built for this exact list. */
+    fun cacheReady(all: List<Item>): Boolean = cacheList === all
+
+    /** Build the fold cache for [all]. Heavy: run off the main thread. Safe to call again. */
+    fun buildCache(all: List<Item>) {
+        if (cacheList === all) return
+        val tw = HashMap<String, List<String>>(all.size)
+        val tf = HashMap<String, String>(all.size)
+        val gw = HashMap<String, List<String>>()
+        for (it in all) {
+            val f = fold(it.title)
+            tw[it.id] = words(f)
+            tf[it.id] = f
+            if (!gw.containsKey(it.group)) gw[it.group] = words(fold(it.group))
+        }
+        titleWords.clear(); titleWords.putAll(tw)
+        titleFolded.clear(); titleFolded.putAll(tf)
+        groupWords.clear(); groupWords.putAll(gw)
+        cacheList = all
+    }
+
+    /**
+     * Channels of the collection, using the fold cache ([buildCache] first).
+     * Empty when the cache is not ready for [all]: the guide opens without the
+     * collections first, they appear once the background scan finishes.
+     */
+    fun itemsOfCached(c: CollectionDef, items: List<Item>, all: List<Item>): List<Item> {
+        if (cacheList !== all) return emptyList()
+        val nk = c.nameKeywords.map { words(fold(it)) }.filter { it.isNotEmpty() }
+        val gk = c.groupKeywords.map { words(fold(it)) }.filter { it.isNotEmpty() }
+        if (nk.isEmpty() && gk.isEmpty()) return emptyList()
+        val l = items.filter { item ->
+            val nw = titleWords[item.id] ?: return@filter false
+            if (nk.any { matchesKeyword(nw, it) }) return@filter true
+            if (gk.isEmpty()) return@filter false
+            val gw = groupWords[item.group] ?: return@filter false
+            gk.any { matchesKeyword(gw, it) }
+        }
+        return if (c.sort == 1) l else l.sortedBy { titleFolded[it.id] ?: "" }
+    }
+
     /** Text form: one line per collection "id TAB emoji TAB name TAB nameKw,nameKw TAB groupKw,groupKw TAB sort". */
     fun encode(list: List<CollectionDef>): String = list.joinToString("\n") {
         "${it.id}\t${cleanEmoji(it.emoji)}\t${cleanName(it.name)}\t${it.nameKeywords.joinToString(",")}\t${it.groupKeywords.joinToString(",")}\t${it.sort}"
@@ -96,6 +151,11 @@ object GuideCollections {
     /** Changes with every switch (trigger to rebuild the guide categories). */
     var version by mutableIntStateOf(0)
         private set
+
+    /** Rebuild trigger for the guide categories (e.g. when the fold cache is ready). */
+    fun touch() {
+        version++
+    }
     private var inited = false
     private fun prefs(c: Context) = Profiles.sp(c, "ipvio_guidecoll")
 

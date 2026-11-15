@@ -62,12 +62,14 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.lerp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Shortly after closing a selection window in the guide (Back) do not perform another back step. */
 object GuideBack {
@@ -117,6 +119,12 @@ fun Guide(
     val ctx = LocalContext.current
     GuidePrefs.init(ctx)
     GuideCollections.init(ctx)
+    // Keyword matching folds every channel title: build that cache off the main thread.
+    // The guide opens at once (without collections); they appear when the scan finishes.
+    LaunchedEffect(all) {
+        withContext(Dispatchers.Default) { GuideCollectionLogic.buildCache(all) }
+        GuideCollections.touch()
+    }
     val openedAt = remember { System.currentTimeMillis() / 1000 }
     val base = (openedAt - 1800) - ((openedAt - 1800) % 1800)
     // Channels with archive (catchup): this many days can be scrolled back
@@ -405,9 +413,11 @@ fun guideCategories(list: List<Item>, all: List<Item>): List<GuideCat> {
         val items = l.ids.mapNotNull { byId[it] }
         if (items.isNotEmpty()) out.add(GuideCat(l.name, items, AIcon.Lists))
     }
-    // Keyword collections (own sauce): channels matched by words in the name or the provider category
+    // Keyword collections (own sauce): channels matched by words in the name or the provider category.
+    // Cached folds: the first guide open shows no collections yet (cache still building),
+    // they appear once the background scan finishes (see the LaunchedEffect in Guide).
     for (c in GuideCollections.list) {
-        val items = GuideCollectionLogic.itemsOf(c, allF)
+        val items = GuideCollectionLogic.itemsOfCached(c, allF, all)
         if (items.isNotEmpty()) out.add(GuideCat("${c.emoji} ${c.name}".trim(), items, AIcon.Lists))
     }
     val groups = LinkedHashMap<String, ArrayList<Item>>()

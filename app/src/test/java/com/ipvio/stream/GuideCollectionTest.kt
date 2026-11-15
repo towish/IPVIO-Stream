@@ -106,4 +106,19 @@ http://h/live/trt.ts
         val kept = PlaylistCacheIO.read(ByteArrayInputStream(out.toByteArray()), "http://x/get.php", setOf("tr"), keepIds = setOf(trtId))!!
         assertTrue(kept.items.any { it.title == "TRT 1" })
     }
+
+    @Test fun foldCacheErstLeerDannVoll() {
+        // The guide must open without the collections while the cache builds (no main-thread scan)
+        val other = listOf(ch("99", "TVA", "CA | Général"))
+        assertFalse(GuideCollectionLogic.cacheReady(all))
+        assertEquals(emptyList<Item>(), GuideCollectionLogic.itemsOfCached(quebec, all, all))
+        GuideCollectionLogic.buildCache(all)
+        assertTrue(GuideCollectionLogic.cacheReady(all))
+        assertEquals(GuideCollectionLogic.itemsOf(quebec, all).map { it.id },
+            GuideCollectionLogic.itemsOfCached(quebec, all, all).map { it.id })
+        // A different list has no cache yet; rebuilding is safe to call again
+        assertFalse(GuideCollectionLogic.cacheReady(other))
+        GuideCollectionLogic.buildCache(all)
+        assertTrue(GuideCollectionLogic.cacheReady(all))
+    }
 }
