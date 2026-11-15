@@ -319,7 +319,8 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 FilterPill(if (chans.isEmpty()) "Sender zuordnen" else Lang.tr("Sender") + " (" + chans.size + ")", false, Modifier.trackFocus(), aicon = AIcon.Live, raw = chans.isNotEmpty()) {
                     hub.nav.open(HubPage.Watch(g))
                 }
-                if (kind == SportData.KIND_TEAM && l != null) {
+                // Team pages are ESPN-only: no team page for CHL teams (HockeyTech ids)
+                if (kind == SportData.KIND_TEAM && l != null && !SportData.isChl(l)) {
                     if (g.home.id.isNotBlank()) FilterPill(g.home.short, false, Modifier.trackFocus(), raw = true) { hub.nav.open(HubPage.Team(l, g.home)) }
                     if (g.away.id.isNotBlank()) FilterPill(g.away.short, false, Modifier.trackFocus(), raw = true) { hub.nav.open(HubPage.Team(l, g.away)) }
                 }
