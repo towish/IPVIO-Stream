@@ -307,22 +307,6 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
         if (kind == SportData.KIND_FIGHT && l != null) value = SportData.fetchCurrent(l).filter { it.group == g.group }.sortedByDescending { it.start }
     }
     val det = d
-    val tabs = ArrayList<String>().apply {
-        add("Übersicht")
-        when (kind) {
-            SportData.KIND_RACE, SportData.KIND_GOLF -> if (g.field.isNotEmpty()) add("Klassement")
-            SportData.KIND_FIGHT -> if (card.size > 1) add("Kampfabend")
-            SportData.KIND_TEAM -> if (det != null) {
-                if (det.stats.isNotEmpty()) add("Statistik")
-                if (det.home?.players?.isNotEmpty() == true || det.away?.players?.isNotEmpty() == true) add(if (det.soccer) "Aufstellung" else "Spieler")
-                if (det.events.isNotEmpty()) add("Ereignisse")
-                if (det.comments.isNotEmpty()) add("Kommentar")
-                if (det.h2h.isNotEmpty() || det.form.isNotEmpty()) add("Direktvergleich")
-            }
-        }
-    }
-    var tab by remember(g.key) { mutableStateOf("Übersicht") }
-    val cur = if (tab in tabs) tab else "Übersicht"
     val chans = hub.chans(g)
     val first = remember { FocusRequester() }
     HubPageFrame(g.groupName, listOf(g.note, if (l != null && l.name != g.groupName) l.name else "").filter { it.isNotBlank() }.joinToString(" · "), { hub.nav.pop() }, first) {
@@ -347,23 +331,43 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 }
             }
         }
-        HubTabs(tabs, cur, first) { tab = it }
+        // Mega one-pager: everything on one scrolling page, up/down only — no tabs, no Enter to navigate
         LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = dpx(30)), verticalArrangement = Arrangement.spacedBy(dpx(4))) {
-            when (cur) {
-                "Statistik" -> statisticsItems(det?.stats.orEmpty())
-                "Aufstellung", "Spieler" -> lineupItems(det, g, l, hub)
-                "Ereignisse" -> timelineItems(det?.events.orEmpty())
-                "Kommentar" -> timelineItems(det?.comments.orEmpty())
-                "Direktvergleich" -> h2hItems(det)
-                "Klassement" -> fieldItems(g)
-                "Kampfabend" -> items(card, key = { it.key }) { x -> MatchRow(x, false) { hub.nav.open(HubPage.Match(x)) } }
-                else -> overviewItems(g, det, done, kind, l, hub) { tab = "Statistik" }
+            overviewItems(g, det, done, kind, l, hub)
+            when (kind) {
+                SportData.KIND_RACE, SportData.KIND_GOLF -> if (g.field.isNotEmpty()) {
+                    item(key = "kh") { HubSectionTitle("Klassement") }
+                    fieldItems(g)
+                }
+                SportData.KIND_FIGHT -> if (card.size > 1) {
+                    item(key = "kh") { HubSectionTitle("Kampfabend") }
+                    items(card, key = { it.key }) { x -> MatchRow(x, false) { hub.nav.open(HubPage.Match(x)) } }
+                }
+                SportData.KIND_TEAM -> if (det != null) {
+                    if (det.stats.isNotEmpty()) {
+                        item(key = "sh") { HubSectionTitle("Statistik") }
+                        statisticsItems(det.stats)
+                    }
+                    if (det.home?.players?.isNotEmpty() == true || det.away?.players?.isNotEmpty() == true) {
+                        item(key = "lh2") { HubSectionTitle(if (det.soccer) "Aufstellung" else "Spieler") }
+                        lineupItems(det, g, l, hub)
+                    }
+                    if (det.events.isNotEmpty()) {
+                        item(key = "eh") { HubSectionTitle("Ereignisse") }
+                        timelineItems(det.events)
+                    }
+                    if (det.comments.isNotEmpty()) {
+                        item(key = "ch") { HubSectionTitle("Kommentar") }
+                        timelineItems(det.comments)
+                    }
+                    if (det.h2h.isNotEmpty() || det.form.isNotEmpty()) h2hItems(det)
+                }
             }
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: SportData.Game, det: SportMatch.Detail?, done: Boolean, kind: Int, l: SportData.League?, hub: HubCtx, onStats: () -> Unit) {
+private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: SportData.Game, det: SportMatch.Detail?, done: Boolean, kind: Int, l: SportData.League?, hub: HubCtx) {
     item(key = "panels") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
             HubPanel(Modifier.weight(1f)) {
@@ -413,15 +417,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
             }
         }
     }
-    // Team comparison on the overview: the key stats at a glance, full table one tab away
+    // Team comparison on the overview: the key stats at a glance, full table further down the page
     val top = det?.let { topStats(it.stats) }.orEmpty()
     if (top.isNotEmpty()) {
         item(key = "cmp") {
-            HubSectionTitle("Teamvergleich", action = "Alle zeigen") { onStats() }
+            HubSectionTitle("Teamvergleich")
         }
         statisticsItems(top)
     }
-    // Box score preview: the top performers of each team, full tables one tab away
+    // Box score preview: the top performers of each team, full tables further down the page
     if (det != null && !det.soccer) {
         listOf(g.home to det.home, g.away to det.away).forEachIndexed { k, (t, side) ->
             val tb = topPlayers(side) ?: return@forEachIndexed
@@ -437,10 +441,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
     }
     // Advanced stats on the same page (no extra tab: TV remote, 85" screen, room for it all)
     analyseItems(det, g)
-    if (g.solo && g.field.isNotEmpty()) {
-        item(key = "top") { Text("Spitze", color = Tok.TextHi, fontSize = spx(18), fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = dpx(8))) }
-        fieldItems(g, 5)
-    }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.fieldItems(g: SportData.Game, max: Int = Int.MAX_VALUE) {
