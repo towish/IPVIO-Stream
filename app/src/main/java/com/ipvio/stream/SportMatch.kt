@@ -232,7 +232,8 @@ object SportMatch {
             val pos = p.optString("position_str").trim()
             val gl = p.optInt("goals")
             val asst = p.optInt("assists")
-            val pm = p.optInt("plusminus")
+            // plusminus arrives as a JSON string like "+1" for some players: optInt drops the leading '+' (returns 0), so parse the string form first
+            val pm = p.optString("plusminus").trim().toIntOrNull() ?: p.optInt("plusminus")
             val stats = listOf(gl.toString(), asst.toString(), (gl + asst).toString(),
                 if (pm > 0) "+$pm" else pm.toString(), p.optInt("shots_on").toString(), p.optInt("pim").toString())
             val pl = Player(name, p.optString("jersey_number"), pos, p.optString("start") == "1", stats, "", "", null)
