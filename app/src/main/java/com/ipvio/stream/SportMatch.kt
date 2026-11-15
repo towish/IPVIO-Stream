@@ -48,7 +48,7 @@ object SportMatch {
     class Detail(
         val stats: List<Stat>, val home: Side?, val away: Side?, val events: List<Ev>, val comments: List<Ev>,
         val venue: String, val attendance: String, val summary: String,
-        val h2hTitle: String, val h2h: List<H2H>, val form: List<Form>, val soccer: Boolean
+        val h2hTitle: String, val h2h: List<H2H>, val form: List<Form>, val soccer: Boolean, val weather: String = ""
     )
 
     private val cache = HashMap<String, Pair<Long, Detail>>()
@@ -165,10 +165,15 @@ object SportMatch {
         val gi = o.optJSONObject("gameInfo")
         val art = o.optJSONObject("article")
         val summary = listOf(art?.optString("headline").orEmpty(), art?.optString("description").orEmpty()).filter { it.isNotBlank() }.joinToString("\n")
+        val w = gi?.optJSONObject("weather")
+        val temp = w?.optString("temperature").orEmpty()
+        val cond = w?.optString("conditionId").orEmpty()
+        val weather = listOf(temp.takeIf { it.isNotBlank() }?.let { "$it°F" }, cond.takeIf { it.isNotBlank() }).filterNotNull().joinToString(" · ")
         return Detail(
             statMap.map { Stat(it.key, it.value[0], it.value[1]) }, home, away, events, comments,
             gi?.optJSONObject("venue")?.optString("fullName").orEmpty(), gi?.optString("attendance").orEmpty().takeIf { it != "0" }.orEmpty(),
-            summary, h2hTitle, h2h, form, rosters.isNotEmpty() || g.league.let { SportData.league(it)?.path?.startsWith("soccer/") == true }
+            summary, h2hTitle, h2h, form, rosters.isNotEmpty() || g.league.let { SportData.league(it)?.path?.startsWith("soccer/") == true },
+            weather = weather
         )
     }
 
@@ -232,6 +237,28 @@ private val PREFERRED = listOf("MIN", "PTS", "REB", "AST", "FG", "G", "A", "SOG"
 private fun columns(b: SportMatch.Block): List<Int> {
     val pref = PREFERRED.mapNotNull { k -> b.labels.indexOf(k).takeIf { it >= 0 } }.distinct().take(6)
     return if (pref.isNotEmpty()) pref else b.labels.indices.take(5).toList()
+}
+
+/** Team stats for the overview: skip rows tied at zero, keep ESPN order. */
+internal fun topStats(stats: List<SportMatch.Stat>, max: Int = 8): List<SportMatch.Stat> {
+    fun isZero(v: String): Boolean {
+        val t = v.trim().removeSuffix("%")
+        return t == "0" || t == "0-0" || t == "0.0"
+    }
+    return stats.filter { !(it.home == it.away && isZero(it.home)) }.take(max)
+}
+
+/** First player block with numbers, its best sort column and the top players by it (passing yards, points, goals …). */
+internal class TopBlock(val block: SportMatch.Block, val key: Int, val players: List<SportMatch.Player>)
+
+internal fun topPlayers(side: SportMatch.Side?, count: Int = 3): TopBlock? {
+    for (b in side?.blocks.orEmpty()) {
+        val cols = columns(b)
+        val key = cols.firstOrNull { c -> b.players.any { it.stats.getOrNull(c)?.toFloatOrNull() != null } } ?: continue
+        val top = b.players.sortedByDescending { it.stats.getOrNull(key)?.toFloatOrNull() ?: Float.NEGATIVE_INFINITY }.take(count)
+        if (top.isNotEmpty()) return TopBlock(b, key, top)
+    }
+    return null
 }
 
 /** Match Center: header with teams, score and Watch Live; tabs appear only if ESPN delivers data for them and fit the sport. */
@@ -305,20 +332,21 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 "Direktvergleich" -> h2hItems(det)
                 "Klassement" -> fieldItems(g)
                 "Kampfabend" -> items(card, key = { it.key }) { x -> MatchRow(x, false) { hub.nav.open(HubPage.Match(x)) } }
-                else -> overviewItems(g, det, done, kind)
+                else -> overviewItems(g, det, done, kind, l, hub) { tab = "Statistik" }
             }
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: SportData.Game, det: SportMatch.Detail?, done: Boolean, kind: Int) {
+private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: SportData.Game, det: SportMatch.Detail?, done: Boolean, kind: Int, l: SportData.League?, hub: HubCtx, onStats: () -> Unit) {
     item(key = "panels") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
             HubPanel(Modifier.weight(1f)) {
                 Text("Spielbericht", color = Tok.TextHi, fontSize = spx(18), fontWeight = FontWeight.Bold)
                 val text = det?.summary?.takeIf { it.isNotBlank() } ?: SportMatch.sentence(g)
                 if (text.isNotBlank()) Text(raw = true, text = text, color = Tok.TextMid, fontSize = spx(16), maxLines = 6, overflow = TextOverflow.Ellipsis)
-                val info = listOf(g.note, det?.venue?.takeIf { it.isNotBlank() } ?: g.venue, g.tv.takeIf { it.isNotBlank() }?.let { "TV: $it" } ?: "",
+                val info = listOf(g.note, det?.venue?.takeIf { it.isNotBlank() } ?: g.venue, det?.weather?.takeIf { it.isNotBlank() } ?: "",
+                    g.tv.takeIf { it.isNotBlank() }?.let { "TV: $it" } ?: "",
                     det?.attendance?.takeIf { it.isNotBlank() }?.let { Lang.tr("Zuschauer") + ": " + it } ?: "").filter { it.isNotBlank() }.distinct()
                 info.forEach { Text(raw = true, text = it, color = Muted, fontSize = spx(15)) }
                 if (kind == SportData.KIND_TEAM && det == null) Text(if (done) "Keine Details verfügbar." else "Lade Details …", color = Muted, fontSize = spx(15))
@@ -358,6 +386,28 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
                     Text(raw = true, text = t.score ?: "", color = Accent2, fontSize = spx(17), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, modifier = Modifier.width(dpx(80)))
                 }
             }
+        }
+    }
+    // Team comparison on the overview: the key stats at a glance, full table one tab away
+    val top = det?.let { topStats(it.stats) }.orEmpty()
+    if (top.isNotEmpty()) {
+        item(key = "cmp") {
+            HubSectionTitle("Teamvergleich", action = "Alle zeigen") { onStats() }
+        }
+        statisticsItems(top)
+    }
+    // Box score preview: the top performers of each team, full tables one tab away
+    if (det != null && !det.soccer) {
+        listOf(g.home to det.home, g.away to det.away).forEachIndexed { k, (t, side) ->
+            val tb = topPlayers(side) ?: return@forEachIndexed
+            val keyLabel = tb.block.labels.getOrNull(tb.key).orEmpty()
+            item(key = "tp$k") {
+                Row(Modifier.fillMaxWidth().padding(start = dpx(12), top = dpx(10)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
+                    TeamLogo(t.logo, t.abbr, dpx(28))
+                    Text(raw = true, text = t.name + (if (keyLabel.isNotBlank()) " · $keyLabel" else ""), color = Accent2, fontSize = spx(18), fontWeight = FontWeight.Bold)
+                }
+            }
+            items(tb.players.size) { i -> PlayerLine(tb.players[i], listOf(tb.key), tb.block.labels, l, hub) }
         }
     }
     if (g.solo && g.field.isNotEmpty()) {

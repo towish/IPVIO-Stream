@@ -480,18 +480,22 @@ internal fun MBtn(text: String, modifier: Modifier = Modifier, onClick: () -> Un
 internal fun LazyListScope.statisticsItems(stats: List<SportMatch.Stat>) {
     items(stats.size) { i ->
         val s = stats[i]
+        val a = s.home.removeSuffix("%").toFloatOrNull()
+        val b = s.away.removeSuffix("%").toFloatOrNull()
+        // The leader stands out (accent + extra bold), the other side steps back; ties and text values stay neutral
+        val lead = if (a != null && b != null && a != b) if (a > b) 1 else -1 else 0
         FRow {
-            Text(raw = true, text = s.home, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(110)))
+            Text(raw = true, text = s.home, color = if (lead == 1) Accent2 else if (lead == -1) Muted else Tok.TextHi,
+                fontSize = spx(17), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(110)))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(raw = true, text = s.label, color = Muted, fontSize = spx(15), textAlign = TextAlign.Center)
-                val a = s.home.removeSuffix("%").toFloatOrNull()
-                val b = s.away.removeSuffix("%").toFloatOrNull()
                 if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(4)).height(dpx(6)).clip(RoundedCornerShape(50))) {
                     Box(Modifier.weight(maxOf(a, 0.01f)).fillMaxHeight().background(Accent2))
                     Box(Modifier.weight(maxOf(b, 0.01f)).fillMaxHeight().background(DS.Overlay4))
                 }
             }
-            Text(raw = true, text = s.away, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
+            Text(raw = true, text = s.away, color = if (lead == -1) Accent2 else if (lead == 1) Muted else Tok.TextHi,
+                fontSize = spx(17), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
         }
     }
 }
