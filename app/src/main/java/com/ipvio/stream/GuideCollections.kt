@@ -125,6 +125,19 @@ object GuideCollectionLogic {
         return list + defaultCollections().drop(1)
     }
 
+    /**
+     * Provider groups, Canadian / Quebec groups first (e.g. "CA: Canada FR"):
+     * the groups the user watches most, instead of buried after the US groups.
+     * "ca" counts only as a whole word ("CA | Sports"), not inside another word.
+     */
+    fun pinnedFirst(names: List<String>): List<String> {
+        val (pinned, rest) = names.partition { g ->
+            val f = fold(g)
+            "canada" in f || "quebec" in f || "ca" in words(f)
+        }
+        return pinned + rest
+    }
+
     /** Channels of the collection, in its sort order (name A–Z, or playlist order). Empty without keywords. */
     fun itemsOf(c: CollectionDef, all: List<Item>): List<Item> {
         val nk = c.nameKeywords.map { words(fold(it)) }.filter { it.isNotEmpty() }

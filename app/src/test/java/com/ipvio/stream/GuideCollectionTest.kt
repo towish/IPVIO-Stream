@@ -166,4 +166,21 @@ http://h/live/trt.ts
         assertEquals(custom, GuideCollectionLogic.migrateDefaults(custom))
         assertEquals(emptyList<CollectionDef>(), GuideCollectionLogic.migrateDefaults(emptyList()))
     }
+
+    @Test fun kanadaGruppenZuerst() {
+        val groups = listOf("USA Entertainment", "CA: Canada FR", "USA News", "Québec", "CA | Sports")
+        assertEquals(
+            listOf("CA: Canada FR", "Québec", "CA | Sports", "USA Entertainment", "USA News"),
+            GuideCollectionLogic.pinnedFirst(groups)
+        )
+        // End to end: the Canada group lands right after the collections, before the US groups
+        val items = listOf(
+            ch("g1", "CNN", "USA News"),
+            ch("g2", "ICI RDI", "CA: Canada FR"),
+            ch("g3", "ESPN", "USA Entertainment"),
+            ch("g4", "TVA", "Québec")
+        )
+        val cats = guideCategories(items, items)
+        assertEquals(listOf("Alle Sender", "CA: Canada FR", "Québec", "USA News", "USA Entertainment"), cats.map { it.name })
+    }
 }

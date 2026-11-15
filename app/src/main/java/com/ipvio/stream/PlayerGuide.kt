@@ -422,7 +422,8 @@ fun guideCategories(list: List<Item>, all: List<Item>): List<GuideCat> {
     }
     val groups = LinkedHashMap<String, ArrayList<Item>>()
     for (it in allF) groups.getOrPut(it.group) { ArrayList() }.add(it)
-    if (groups.size > 1) for ((g, l) in groups) out.add(GuideCat(g, l, null))
+    // Canadian / Quebec groups first (e.g. "CA: Canada FR"), the rest in provider order
+    if (groups.size > 1) for (g in GuideCollectionLogic.pinnedFirst(groups.keys.toList())) out.add(GuideCat(g, groups.getValue(g), null))
     return out
 }
 
