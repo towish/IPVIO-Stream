@@ -318,7 +318,6 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 if (det.events.isNotEmpty()) add("Ereignisse")
                 if (det.comments.isNotEmpty()) add("Kommentar")
                 if (det.h2h.isNotEmpty() || det.form.isNotEmpty()) add("Direktvergleich")
-                if (det.winProb.isNotEmpty() || det.drives.isNotEmpty() || det.scoring.isNotEmpty()) add("Analyse")
             }
         }
     }
@@ -356,7 +355,6 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 "Ereignisse" -> timelineItems(det?.events.orEmpty())
                 "Kommentar" -> timelineItems(det?.comments.orEmpty())
                 "Direktvergleich" -> h2hItems(det)
-                "Analyse" -> analyseItems(det, g)
                 "Klassement" -> fieldItems(g)
                 "Kampfabend" -> items(card, key = { it.key }) { x -> MatchRow(x, false) { hub.nav.open(HubPage.Match(x)) } }
                 else -> overviewItems(g, det, done, kind, l, hub) { tab = "Statistik" }
@@ -437,6 +435,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
             items(tb.players.size) { i -> PlayerLine(tb.players[i], listOf(tb.key), tb.block.labels, l, hub) }
         }
     }
+    // Advanced stats on the same page (no extra tab: TV remote, 85" screen, room for it all)
+    analyseItems(det, g)
     if (g.solo && g.field.isNotEmpty()) {
         item(key = "top") { Text("Spitze", color = Tok.TextHi, fontSize = spx(18), fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = dpx(8))) }
         fieldItems(g, 5)
@@ -505,7 +505,7 @@ private fun PlayerLine(p: SportMatch.Player, cols: List<Int>, labels: List<Strin
     }
 }
 
-/** Advanced stats: win-probability momentum, drive chart and scoring summary (only what ESPN delivers for the sport). */
+/** Advanced stats, shown on the overview page itself: win-probability momentum, drive chart and scoring summary (only what ESPN delivers for the sport). */
 private fun androidx.compose.foundation.lazy.LazyListScope.analyseItems(det: SportMatch.Detail?, g: SportData.Game) {
     if (det == null) return
     if (det.winProb.isNotEmpty()) {
