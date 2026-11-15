@@ -148,9 +148,10 @@ http://h/x
 
     @Test fun vorauswahlNachGeraetesprache() {
         val counts = mapOf("de" to 50, "en" to 80, "tr" to 20, "yu" to 5, "?" to 3)
-        assertEquals(setOf("de"), LoadLogic.systemPreselect(counts, "de"))
-        assertEquals(setOf("yu"), LoadLogic.systemPreselect(counts, "sr"))       // Serbian → Ex-YU
-        assertEquals(setOf("en"), LoadLogic.systemPreselect(counts, "fr"))       // not present → English
+        // Untagged titles ("?") are always preselected when present (see systemPreselect)
+        assertEquals(setOf("de", "?"), LoadLogic.systemPreselect(counts, "de"))
+        assertEquals(setOf("yu", "?"), LoadLogic.systemPreselect(counts, "sr"))       // Serbian → Ex-YU
+        assertEquals(setOf("en", "?"), LoadLogic.systemPreselect(counts, "fr"))       // not present → English
         assertEquals(emptySet<String>(), LoadLogic.systemPreselect(mapOf("tr" to 1), "fr"))
         assertEquals("he", LoadLogic.langCodeOf("iw"))
         assertEquals("nb", LoadLogic.langCodeOf("no"))
