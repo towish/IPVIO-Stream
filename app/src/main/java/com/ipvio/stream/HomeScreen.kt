@@ -298,6 +298,11 @@ fun HomeScreen(
         if (l.size >= 4) value = src to l.take(20)
     }
 
+    // New releases on the streaming services (TMDB discover): one rail per service, fetched once per home open
+    val newRel by produceState<Map<String, List<Item>>>(emptyMap(), Unit) {
+        if (MetaRepo.enabled()) value = NewReleases.fetchAll()
+    }
+
     // Check new episodes of favorite series (bell)
     LaunchedEffect(byId.size, Library.favs.size) {
         if (byId.isNotEmpty()) NewEpisodes.check(ctx, Library.favs.mapNotNull { byId[it] }.filter { it.kind == Kind.SERIES })
@@ -643,6 +648,22 @@ fun HomeScreen(
                                 if (!HomeLayout.shown(blockId)) continue
                                 when (blockId) {
                                     "tiles" -> { item(key = "tiles") { QuickTiles(tiles) } }
+                                    // New releases on the streaming services: one rail per service (TMDB discover, region CA)
+                                    "newrel" -> {
+                                        if (MetaRepo.enabled()) {
+                                            NewReleases.PROVIDERS.forEach { p ->
+                                                val items = newRel[p.id].orEmpty()
+                                                if (items.isNotEmpty()) item(key = "nr${p.id}") {
+                                                    val title = Lang.tr("Neu auf {0}").replace("{0}", p.name)
+                                                    ItemsRow(title, items, cardW, onOpen) { onBrowse(BrowseReq(title, items, SORT_NEW)) }
+                                                }
+                                            }
+                                        } else item(key = "nrkey") {
+                                            Text(Lang.tr("Für Neuheiten: TMDB-Schlüssel in den Einstellungen eintragen"),
+                                                color = Muted, fontSize = spx(15), raw = true,
+                                                modifier = Modifier.padding(start = RowPadX + dpx(2), top = dpx(18)))
+                                        }
+                                    }
                                     "clock" -> { item(key = "clock") { ClockWidget() } }
                                     // Continue watching directly under the tiles: whoever watches a lot wants to continue in few clicks
                                     "resume" -> { if (resumeList.isNotEmpty()) item(key = "resume") { ResumeRow(resumeList, cardW, onResume) } }

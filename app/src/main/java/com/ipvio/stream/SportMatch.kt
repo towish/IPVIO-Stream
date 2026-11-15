@@ -51,7 +51,9 @@ object SportMatch {
         val stats: List<Stat>, val home: Side?, val away: Side?, val events: List<Ev>, val comments: List<Ev>,
         val venue: String, val attendance: String, val summary: String,
         val h2hTitle: String, val h2h: List<H2H>, val form: List<Form>, val soccer: Boolean, val weather: String = "",
-        val winProb: List<Float> = emptyList(), val drives: List<Drive> = emptyList(), val scoring: List<Scoring> = emptyList()
+        val winProb: List<Float> = emptyList(), val drives: List<Drive> = emptyList(), val scoring: List<Scoring> = emptyList(),
+        /** CHL only: goals per period (ESPN games carry them on the Game itself) and the three stars. */
+        val homeLines: List<String> = emptyList(), val awayLines: List<String> = emptyList(), val stars: List<String> = emptyList()
     )
     /** One drive (football): field position is absolute (0 = home goal line, 100 = away goal line). */
     class Drive(val home: Boolean, val result: String, val plays: Int, val yards: Int, val startPos: Int, val endPos: Int, val label: String)
@@ -204,6 +206,155 @@ object SportMatch {
         )
     }
 
+    /** "First Last", null when blank (some assists carry no name). */
+    private fun personName(o: JSONObject?): String? {
+        val f = o?.optString("first_name").orEmpty().trim()
+        val l = o?.optString("last_name").orEmpty().trim()
+        return "$f $l".trim().takeIf { it.isNotBlank() }
+    }
+
+    /** Goals per period (1-based, gaps filled with 0); empty when the feed has no period data. */
+    private fun periodLines(o: JSONObject?): List<String> {
+        if (o == null) return emptyList()
+        val keys = o.keys().asSequence().mapNotNull { it.toIntOrNull() }.sorted().toList()
+        if (keys.isEmpty()) return emptyList()
+        return (1..keys.max()).map { o.optInt(it.toString()).toString() }
+    }
+
+    private fun chlSide(lu: JSONObject?): Side? {
+        if (lu == null) return null
+        val fw = ArrayList<Player>()
+        val df = ArrayList<Player>()
+        for (p in objs(lu.optJSONArray("players"))) {
+            val name = personName(p) ?: continue
+            val pos = p.optString("position_str").trim()
+            val gl = p.optInt("goals")
+            val asst = p.optInt("assists")
+            val pm = p.optInt("plusminus")
+            val stats = listOf(gl.toString(), asst.toString(), (gl + asst).toString(),
+                if (pm > 0) "+$pm" else pm.toString(), p.optInt("shots_on").toString(), p.optInt("pim").toString())
+            val pl = Player(name, p.optString("jersey_number"), pos, p.optString("start") == "1", stats, "", "", null)
+            when (pos) { "LW", "C", "RW", "F" -> fw.add(pl); "LD", "RD", "D" -> df.add(pl); else -> fw.add(pl) }
+        }
+        val gkObjs = objs(lu.optJSONArray("goalies"))
+        val played = gkObjs.filter { it.optInt("seconds") > 0 || it.optInt("shots_against") > 0 }
+        val use = if (played.isNotEmpty()) played else gkObjs.take(1)
+        val goalies = use.mapNotNull { gk ->
+            val name = personName(gk) ?: return@mapNotNull null
+            val sa = gk.optInt("shots_against")
+            val sv = gk.optInt("saves")
+            val svp = when {
+                sa <= 0 -> "–"
+                sv >= sa -> "1.000"
+                else -> "0." + (sv * 1000 / sa).toString().padStart(3, '0')
+            }
+            val stats = listOf(sa.toString(), sv.toString(), svp, gk.optInt("goals_against").toString(), gk.optString("time").orEmpty())
+            Player(name, gk.optString("jersey_number"), "G", gk.optString("start") == "1", stats, "", "", null)
+        }
+        val labels = listOf("G", "A", "PTS", "+/-", "SOG", "PIM")
+        val blocks = ArrayList<Block>()
+        if (fw.isNotEmpty()) blocks.add(Block("Forwards", labels, fw.sortedByDescending { it.stats[2].toIntOrNull() ?: 0 }))
+        if (df.isNotEmpty()) blocks.add(Block("Defensemen", labels, df.sortedByDescending { it.stats[2].toIntOrNull() ?: 0 }))
+        if (goalies.isNotEmpty()) blocks.add(Block("Goalies", listOf("SA", "SV", "SV%", "GA", "TOI"), goalies))
+        return if (blocks.isEmpty()) null else Side("", blocks)
+    }
+
+    /**
+     * CHL match detail from the official HockeyTech game summary (feed "gc", tab "gamesummary",
+     * JSONP-wrapped). Same source as the R package fastRhockey. Maps onto the same [Detail] the
+     * ESPN summary fills, so the one-pager shows the same sections (stats, box score, events, scoring).
+     * Returns null when the payload is unusable; the caller then keeps the last good detail.
+     */
+    fun parseChl(jsonp: String, g: SportData.Game): Detail? {
+        val t = jsonp.trim().removeSuffix(";")
+        val body = if (t.contains("(") && t.endsWith(")")) t.substring(t.indexOf('(') + 1, t.length - 1) else t
+        val gs = try {
+            JSONObject(body).optJSONObject("GC")?.optJSONObject("Gamesummary")
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val meta = gs.optJSONObject("meta")
+        val started = meta?.optString("started") == "1"
+        // Team stats (home first, like ESPN): only once the game started, otherwise all zeros
+        val totals = { k: String -> gs.optJSONObject(k) }
+        val stats = if (!started) emptyList() else listOf(
+            Stat("Shots", (totals("totalShots")?.optInt("home") ?: 0).toString(), (totals("totalShots")?.optInt("visitor") ?: 0).toString()),
+            Stat("Shots on goal", (totals("totalShotsOn")?.optInt("home") ?: 0).toString(), (totals("totalShotsOn")?.optInt("visitor") ?: 0).toString()),
+            Stat("Faceoffs won", (totals("totalFaceoffs")?.optJSONObject("home")?.optInt("won") ?: 0).toString(),
+                (totals("totalFaceoffs")?.optJSONObject("visitor")?.optInt("won") ?: 0).toString()),
+            Stat("Hits", (totals("totalHits")?.optInt("home") ?: 0).toString(), (totals("totalHits")?.optInt("visitor") ?: 0).toString()),
+            Stat("Penalty minutes", (totals("pimTotal")?.optInt("home") ?: 0).toString(), (totals("pimTotal")?.optInt("visitor") ?: 0).toString()),
+            Stat("Power play",
+                "${totals("powerPlayGoals")?.optInt("home") ?: 0}/${totals("powerPlayCount")?.optInt("home") ?: 0}",
+                "${totals("powerPlayGoals")?.optInt("visitor") ?: 0}/${totals("powerPlayCount")?.optInt("visitor") ?: 0}")
+        )
+        // Goals, in game order; the running score follows from the home flag
+        val goals = objs(gs.optJSONArray("goals")).sortedWith(compareBy({ it.optInt("period_id") }, { it.optInt("s") }))
+        fun goalText(o: JSONObject): String? {
+            val name = personName(o.optJSONObject("goal_scorer")) ?: return null
+            val code = o.optJSONObject("goal_scorer")?.optString("team_code").orEmpty()
+            val assists = listOf(o.optJSONObject("assist1_player"), o.optJSONObject("assist2_player")).mapNotNull { personName(it) }
+            val flags = listOf(
+                if (o.optString("power_play") == "1" || o.optString("goal_type") == "PP") "AN" else "",
+                if (o.optString("short_handed") == "1") "DN" else "",
+                if (o.optString("empty_net") == "1") "FD" else ""
+            ).filter { it.isNotBlank() }
+            return buildString {
+                if (code.isNotBlank()) { append(code); append(" · ") }
+                append(name)
+                if (assists.isNotEmpty()) { append(" ("); append(assists.joinToString(", ")); append(")") }
+                if (flags.isNotEmpty()) { append(" · "); append(flags.joinToString("/")) }
+            }
+        }
+        var h = 0
+        var a = 0
+        val scoring = goals.mapNotNull { o ->
+            val txt = goalText(o) ?: return@mapNotNull null
+            if (o.optString("home") == "1") h++ else a++
+            Scoring(o.optInt("period_id"), o.optString("time"), txt, h, a)
+        }
+        // Timeline: goals and penalties, in game order
+        val evs = ArrayList<Triple<Int, Int, Ev>>()
+        for (o in goals) {
+            val txt = goalText(o) ?: continue
+            evs.add(Triple(o.optInt("period_id"), o.optInt("s"), Ev("P${o.optInt("period_id")} ${o.optString("time")}", "goal", txt, true)))
+        }
+        for (o in objs(gs.optJSONArray("penalties"))) {
+            val p = o.optJSONObject("player_penalized_info")
+            val name = personName(p) ?: continue
+            val code = p?.optString("team_code").orEmpty()
+            val desc = o.optString("lang_penalty_description").trim()
+            val min = o.optInt("minutes")
+            val txt = buildString {
+                if (code.isNotBlank()) { append(code); append(" · ") }
+                append(name)
+                if (desc.isNotBlank()) { append(" — "); append(desc) }
+                append(" ($min min)")
+            }
+            evs.add(Triple(o.optInt("period_id"), o.optInt("s"),
+                Ev("P${o.optInt("period_id")} ${o.optString("time_off_formatted")}", "penalty", txt, false)))
+        }
+        val events = evs.sortedWith(compareBy({ it.first }, { it.second })).map { it.third }
+        val stars = objs(gs.optJSONArray("mvps")).mapNotNull { m ->
+            val name = personName(m) ?: return@mapNotNull null
+            val code = if (m.optInt("home") == 1) g.home.abbr else g.away.abbr
+            "$name ($code)"
+        }
+        val gbp = gs.optJSONObject("goalsByPeriod")
+        return Detail(
+            stats,
+            if (started) chlSide(gs.optJSONObject("home_team_lineup")) else null,
+            if (started) chlSide(gs.optJSONObject("visitor_team_lineup")) else null,
+            events, emptyList(),
+            gs.optString("venue").trim(),
+            meta?.optString("attendance").orEmpty().takeIf { it != "0" }.orEmpty(),
+            "", "", emptyList(), emptyList(), false,
+            homeLines = if (started) periodLines(gbp?.optJSONObject("home")) else emptyList(),
+            awayLines = if (started) periodLines(gbp?.optJSONObject("visitor")) else emptyList(),
+            stars = stars
+        )
+    }
+
     private fun shortPeriod(p: String): String {
         val n = Regex("\\d+").find(p)?.value ?: return p.take(3)
         return when {
@@ -217,6 +368,7 @@ object SportMatch {
 
     suspend fun fetch(l: SportData.League, g: SportData.Game): Detail? = withContext(Dispatchers.IO) {
         if (l.kind != SportData.KIND_TEAM) return@withContext null
+        if (SportData.isChl(l)) return@withContext fetchChl(l, g)
         val key = l.path + "|" + g.id
         val now = System.currentTimeMillis()
         val hit = synchronized(cache) { cache[key] }
@@ -227,6 +379,27 @@ object SportMatch {
             Net.withTimeouts(8, 12).newCall(req).execute().use { r ->
                 if (!r.isSuccessful) return@withContext hit?.second
                 val d = parse(r.body?.string().orEmpty(), g)
+                synchronized(cache) { if (cache.size > 80) cache.clear(); cache[key] = now to d }
+                d
+            }
+        } catch (_: Exception) {
+            hit?.second
+        }
+    }
+
+    /** CHL detail: the HockeyTech game summary instead of the ESPN summary (same cache, same refresh). */
+    private suspend fun fetchChl(l: SportData.League, g: SportData.Game): Detail? = withContext(Dispatchers.IO) {
+        val key = l.path + "|" + g.id
+        val now = System.currentTimeMillis()
+        val hit = synchronized(cache) { cache[key] }
+        if (hit != null && now - hit.first < 25_000) return@withContext hit.second
+        try {
+            val (base, k, site) = SportData.chlGc(l)
+            val url = "$base?feed=gc&tab=gamesummary&game_id=${g.id}&key=$k&client_code=${l.path.removePrefix("chl:")}&site_id=$site&lang=en&callback=angular.callbacks._0"
+            val req = Request.Builder().url(url).header("User-Agent", "IPVIO-Stream").build()
+            Net.withTimeouts(8, 12).newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return@withContext hit?.second
+                val d = parseChl(r.body?.string().orEmpty(), g) ?: return@withContext hit?.second
                 synchronized(cache) { if (cache.size > 80) cache.clear(); cache[key] = now to d }
                 d
             }
@@ -399,9 +572,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
             }
         }
     }
-    // Score per period (quarters, periods, innings) or sets in tennis
-    if (!g.solo && (g.homeLines.isNotEmpty() || g.awayLines.isNotEmpty())) {
-        val n = maxOf(g.homeLines.size, g.awayLines.size)
+    // Score per period (quarters, periods, innings) or sets in tennis; CHL games carry them in the detail, not the Game
+    val hl = g.homeLines.ifEmpty { det?.homeLines.orEmpty() }
+    val al = g.awayLines.ifEmpty { det?.awayLines.orEmpty() }
+    if (!g.solo && (hl.isNotEmpty() || al.isNotEmpty())) {
+        val n = maxOf(hl.size, al.size)
         val tennis = kind == SportData.KIND_TENNIS
         item(key = "lh") {
             FRow {
@@ -410,13 +585,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
                 Text(if (tennis) "Sätze" else "Gesamt", color = Muted, fontSize = spx(15), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(80)))
             }
         }
-        listOf(g.home to g.homeLines, g.away to g.awayLines).forEachIndexed { k, (t, ls) ->
+        listOf(g.home to hl, g.away to al).forEachIndexed { k, (t, ls) ->
             item(key = "l$k") {
                 FRow {
                     TeamName(t, g.state, Modifier.weight(1f), logoSize = 24)
                     (0 until n).forEach { i -> Text(raw = true, text = ls.getOrElse(i) { "" }, color = Tok.TextHi, fontSize = spx(16), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(56))) }
                     Text(raw = true, text = t.score ?: "", color = Accent2, fontSize = spx(17), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, modifier = Modifier.width(dpx(80)))
                 }
+            }
+        }
+    }
+    // Three stars of the game (CHL)
+    if (det?.stars?.isNotEmpty() == true) {
+        item(key = "stars") {
+            FRow {
+                Text("3 Sterne", color = Accent2, fontSize = spx(16), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(110)))
+                Text(raw = true, text = det.stars.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("  ·  "),
+                    color = Tok.TextHi, fontSize = spx(16), modifier = Modifier.weight(1f))
             }
         }
     }
@@ -549,7 +734,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.analyseItems(det: Spo
         }
     }
     if (det.scoring.isNotEmpty()) {
-        val hockey = SportData.league(g.league)?.path?.startsWith("hockey/") == true
+        val hockey = SportData.league(g.league)?.let { it.path.startsWith("hockey/") || SportData.isChl(it) } == true
         item(key = "sct") {
             HubSectionTitle("Punkte")
         }

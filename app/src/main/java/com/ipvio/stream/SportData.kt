@@ -82,8 +82,8 @@ object SportData {
         League("College Football", "football/college-football", "American Football", "nfl"),
         League("NHL", "hockey/nhl", "Eishockey", "nhl"),
         // CHL: Canadian junior hockey — the official HockeyTech feed (chl.ca), not ESPN.
-        // Path "chl:<code>": the feed's client_code (lhjmq = QMJHL, ohl, whl). Scoreboard only:
-        // the match detail (stats, box score) stays ESPN-only, CHL games show the basic overview.
+        // Path "chl:<code>": the feed's client_code (lhjmq = QMJHL, ohl, whl). Scoreboard via the modulekit
+        // scorebar; the match detail (stats, box score) via the "gc" gamesummary feed (see SportMatch.parseChl).
         League("LHJMQ", "chl:lhjmq", "Eishockey", "nhl"),
         League("OHL", "chl:ohl", "Eishockey", "nhl"),
         League("WHL", "chl:whl", "Eishockey", "nhl"),
@@ -147,6 +147,17 @@ object SportData {
 
     /** Public site key of chl.ca (FanReach plugin, same for LHJMQ/OHL/WHL — visible in the page source). */
     private const val CHL_KEY = "f1aa699db3d81487"
+
+    /**
+     * Game-center feed (full box score) per CHL league: the QMJHL uses the older cluster with its own key,
+     * OHL/WHL the new cluster with the site key. Same source as the R package fastRhockey (feed "gc", tab "gamesummary").
+     * Returns (base URL, key, site_id).
+     */
+    fun chlGc(l: League): Triple<String, String, Int> = when (l.path.removePrefix("chl:")) {
+        "lhjmq" -> Triple("https://cluster.leaguestat.com/feed/index.php", "f322673b6bcae299", 0)
+        "ohl" -> Triple("https://lscluster.hockeytech.com/feed/index.php", CHL_KEY, 1)
+        else -> Triple("https://lscluster.hockeytech.com/feed/index.php", CHL_KEY, 0)
+    }
 
     /** The scorebar window covers the schedule date bar (-7 .. +14 days). */
     private const val CHL_DAYS_BACK = 7

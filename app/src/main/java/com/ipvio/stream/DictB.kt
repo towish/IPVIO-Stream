@@ -71,6 +71,12 @@ Ein¦On¦¦¦¦¦¦Activé¦
 Keine Sammlungen¦No collections yet¦¦¦¦¦¦Aucune collection¦
 Sortierung¦Sort order¦¦¦¦¦¦Tri¦
 Eine Sammlung fasst Sender nach Stichwörtern zusammen – zum Beispiel alle Québec-Sender, egal in welcher Kategorie des Anbieters sie stehen. Ein Stichwort trifft, wenn ein Wort im Namen damit beginnt.¦A collection groups channels by keywords – for example all Québec channels, no matter which provider category they are in. A keyword matches when a word in the name starts with it.¦¦¦¦¦¦Une collection regroupe des chaînes par mots-clés — par exemple toutes les chaînes du Québec, peu importe la catégorie du fournisseur. Un mot-clé correspond quand un mot du nom commence par lui.¦
+3 Sterne¦3 stars¦¦¦¦¦¦3 étoiles¦
+Neu im Streaming¦New on streaming¦¦¦¦¦¦Nouveautés streaming¦
+Neue Filme und Serien auf Netflix, Prime Video, Crave und Disney+¦New movies and series on Netflix, Prime Video, Crave and Disney+¦¦¦¦¦¦Nouveaux films et séries sur Netflix, Prime Video, Crave et Disney+¦
+Neu auf {0}¦New on {0}¦¦¦¦¦¦Nouveau sur {0}¦
+Für Neuheiten: TMDB-Schlüssel in den Einstellungen eintragen¦For new releases: enter your TMDB key in Settings¦¦¦¦¦¦Pour les nouveautés : saisissez votre clé TMDB dans les réglages¦
+Auf {0} ansehen¦Watch on {0}¦¦¦¦¦¦Regarder sur {0}¦
 Zurück = schließen¦Back = close¦Geri = kapat¦Nazad = zatvori¦Natrag = zatvori¦Nazad = zatvori¦Atrás = cerrar¦Retour = fermer¦Indietro = chiudi
 Menü-Taste im TV-Guide = Zoom¦Menu key in the TV guide = zoom¦TV rehberinde Menü tuşu = yakınlaştırma¦Tipka Meni u TV vodiču = zum¦Tipka Izbornik u TV vodiču = zum¦Taster Meni u TV vodiču = zum¦Tecla Menú en la guía de TV = zoom¦Touche Menu dans le guide TV = zoom¦Tasto Menu nella guida TV = zoom
 Zeitzone {0} (änderbar unter Einstellungen > Sprache & Region)¦Time zone {0} (change under Settings > Language & region)¦Saat dilimi {0} (Ayarlar > Dil ve bölge altında değiştirilebilir)¦Vremenska zona {0} (mijenja se u Postavke > Jezik i regija)¦Vremenska zona {0} (mijenja se u Postavke > Jezik i regija)¦Vremenska zona {0} (menja se u Podešavanja > Jezik i region)¦Zona horaria {0} (se cambia en Ajustes > Idioma y región)¦Fuseau horaire {0} (modifiable dans Réglages > Langue et région)¦Fuso orario {0} (modificabile in Impostazioni > Lingua e regione)
