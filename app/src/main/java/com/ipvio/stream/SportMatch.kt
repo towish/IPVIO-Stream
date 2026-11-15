@@ -36,7 +36,7 @@ import org.json.JSONObject
 /** Single-game data from ESPN "summary": stats, lineups, events, commentary, head to head. Missing parts stay empty; their tab then does not appear. */
 object SportMatch {
     class Stat(val label: String, val home: String, val away: String)
-    class Player(val name: String, val jersey: String, val pos: String, val starter: Boolean, val stats: List<String>, val sub: String = "", val id: String = "")
+    class Player(val name: String, val jersey: String, val pos: String, val starter: Boolean, val stats: List<String>, val sub: String = "", val id: String = "", val headshot: String? = null)
     /** A block of players with the same columns (NHL: forwards, defense, goalies; basketball: one block). */
     class Block(val name: String, val labels: List<String>, val players: List<Player>)
     class Side(val formation: String, val blocks: List<Block>) {
@@ -48,8 +48,13 @@ object SportMatch {
     class Detail(
         val stats: List<Stat>, val home: Side?, val away: Side?, val events: List<Ev>, val comments: List<Ev>,
         val venue: String, val attendance: String, val summary: String,
-        val h2hTitle: String, val h2h: List<H2H>, val form: List<Form>, val soccer: Boolean, val weather: String = ""
+        val h2hTitle: String, val h2h: List<H2H>, val form: List<Form>, val soccer: Boolean, val weather: String = "",
+        val winProb: List<Float> = emptyList(), val drives: List<Drive> = emptyList(), val scoring: List<Scoring> = emptyList()
     )
+    /** One drive (football): field position is absolute (0 = home goal line, 100 = away goal line). */
+    class Drive(val home: Boolean, val result: String, val plays: Int, val yards: Int, val startPos: Int, val endPos: Int, val label: String)
+    /** One scoring play with the score right after it. */
+    class Scoring(val period: Int, val clock: String, val text: String, val home: Int, val away: Int)
 
     private val cache = HashMap<String, Pair<Long, Detail>>()
 
@@ -96,7 +101,8 @@ object SportMatch {
                 val pos = p.optJSONObject("position")?.optString("abbreviation").orEmpty().ifBlank { a?.optJSONObject("position")?.optString("abbreviation").orEmpty() }
                 val sub = when { p.optBoolean("subbedIn") -> "in"; p.optBoolean("subbedOut") -> "out"; else -> "" }
                 Player(a?.optString("displayName").orEmpty(), p.optString("jersey").ifBlank { a?.optString("jersey").orEmpty() }, if (pos == "SUB") "" else pos,
-                    p.optBoolean("starter"), emptyList(), sub, a?.optString("id").orEmpty()) to p.optString("formationPlace").toIntOrNull()
+                    p.optBoolean("starter"), emptyList(), sub, a?.optString("id").orEmpty(),
+                    a?.optJSONObject("headshot")?.optString("href")?.takeIf { it.startsWith("http") }) to p.optString("formationPlace").toIntOrNull()
             }.sortedBy { it.second ?: 99 }.map { it.first }.filter { it.name.isNotBlank() }
             val s = Side(r.optString("formation"), listOf(Block("", emptyList(), pl)))
             if (r.optString("homeAway") == "home") home = s else away = s
@@ -109,7 +115,8 @@ object SportMatch {
                 val pl = objs(grp.optJSONArray("athletes")).map { p ->
                     val a = p.optJSONObject("athlete")
                     Player(a?.optString("displayName").orEmpty(), a?.optString("jersey").orEmpty(), a?.optJSONObject("position")?.optString("abbreviation").orEmpty(),
-                        p.optBoolean("starter"), p.optJSONArray("stats").strs(), "", a?.optString("id").orEmpty())
+                        p.optBoolean("starter"), p.optJSONArray("stats").strs(), "", a?.optString("id").orEmpty(),
+                        a?.optJSONObject("headshot")?.optString("href")?.takeIf { it.startsWith("http") })
                 }.filter { it.name.isNotBlank() }
                 Block(grp.optString("text").ifBlank { grp.optString("name") }, labels, pl)
             }.filter { it.players.isNotEmpty() }
@@ -169,11 +176,29 @@ object SportMatch {
         val temp = w?.optString("temperature").orEmpty()
         val cond = w?.optString("conditionId").orEmpty()
         val weather = listOf(temp.takeIf { it.isNotBlank() }?.let { "$it°F" }, cond.takeIf { it.isNotBlank() }).filterNotNull().joinToString(" · ")
+        val winProb = objs(o.optJSONArray("winprobability")).mapNotNull {
+            if (it.has("homeWinPercentage")) it.optDouble("homeWinPercentage").toFloat() else null
+        }
+        val drives = objs(o.optJSONObject("drives")?.optJSONArray("previous")).mapNotNull { d ->
+            val teamId = d.optJSONObject("team")?.optString("id").orEmpty()
+            if (teamId.isBlank()) return@mapNotNull null
+            val s = d.optJSONObject("start")
+            val e = d.optJSONObject("end")
+            val sp = s?.optInt("yardLine", -1) ?: -1
+            val ep = e?.optInt("yardLine", -1) ?: -1
+            Drive(teamId == g.home.id, d.optString("result").ifBlank { "Live" }, d.optJSONArray("plays")?.length() ?: 0,
+                d.optInt("yards"), sp.takeIf { it in 0..100 } ?: -1, ep.takeIf { it in 0..100 } ?: -1,
+                listOf(s?.optString("text").orEmpty(), e?.optString("text").orEmpty()).filter { it.isNotBlank() }.joinToString(" → "))
+        }
+        val scoring = objs(o.optJSONArray("scoringPlays")).map {
+            Scoring(it.optJSONObject("period")?.optInt("number") ?: 0, it.optJSONObject("clock")?.optString("displayValue").orEmpty(),
+                it.optString("text"), it.optInt("homeScore"), it.optInt("awayScore"))
+        }.filter { it.text.isNotBlank() }
         return Detail(
             statMap.map { Stat(it.key, it.value[0], it.value[1]) }, home, away, events, comments,
             gi?.optJSONObject("venue")?.optString("fullName").orEmpty(), gi?.optString("attendance").orEmpty().takeIf { it != "0" }.orEmpty(),
             summary, h2hTitle, h2h, form, rosters.isNotEmpty() || g.league.let { SportData.league(it)?.path?.startsWith("soccer/") == true },
-            weather = weather
+            weather = weather, winProb = winProb, drives = drives, scoring = scoring
         )
     }
 
@@ -293,6 +318,7 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 if (det.events.isNotEmpty()) add("Ereignisse")
                 if (det.comments.isNotEmpty()) add("Kommentar")
                 if (det.h2h.isNotEmpty() || det.form.isNotEmpty()) add("Direktvergleich")
+                if (det.winProb.isNotEmpty() || det.drives.isNotEmpty() || det.scoring.isNotEmpty()) add("Analyse")
             }
         }
     }
@@ -330,6 +356,7 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 "Ereignisse" -> timelineItems(det?.events.orEmpty())
                 "Kommentar" -> timelineItems(det?.comments.orEmpty())
                 "Direktvergleich" -> h2hItems(det)
+                "Analyse" -> analyseItems(det, g)
                 "Klassement" -> fieldItems(g)
                 "Kampfabend" -> items(card, key = { it.key }) { x -> MatchRow(x, false) { hub.nav.open(HubPage.Match(x)) } }
                 else -> overviewItems(g, det, done, kind, l, hub) { tab = "Statistik" }
@@ -466,13 +493,71 @@ private fun androidx.compose.foundation.lazy.LazyListScope.lineupItems(det: Spor
 @Composable
 private fun PlayerLine(p: SportMatch.Player, cols: List<Int>, labels: List<String>, l: SportData.League?, hub: HubCtx) {
     FRow({ if (l != null && p.id.isNotBlank()) hub.nav.open(HubPage.Player(l, p.id, p.name)) }) {
-        Text(raw = true, text = p.jersey, color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(40)))
+        Box(Modifier.width(dpx(40)), contentAlignment = Alignment.Center) {
+            TeamLogo(p.headshot, p.jersey, dpx(30))
+        }
         Text(raw = true, text = p.name, color = Tok.TextHi, fontSize = spx(16), fontWeight = if (p.starter && cols.isNotEmpty()) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         if (p.pos.isNotBlank()) Text(raw = true, text = p.pos, color = Muted, fontSize = spx(14), modifier = Modifier.width(dpx(50)))
         if (p.sub == "in") Text("eingewechselt", color = Accent2, fontSize = spx(13))
         if (p.sub == "out") Text("ausgewechselt", color = Muted, fontSize = spx(13))
         cols.forEach { c -> Text(raw = true, text = p.stats.getOrElse(c) { "" }, color = Tok.TextHi, fontSize = spx(15), textAlign = TextAlign.End, modifier = Modifier.width(dpx(66))) }
+    }
+}
+
+/** Advanced stats: win-probability momentum, drive chart and scoring summary (only what ESPN delivers for the sport). */
+private fun androidx.compose.foundation.lazy.LazyListScope.analyseItems(det: SportMatch.Detail?, g: SportData.Game) {
+    if (det == null) return
+    if (det.winProb.isNotEmpty()) {
+        item(key = "wp") {
+            HubSectionTitle("Momentum", raw = true)
+        }
+        item(key = "wpc") {
+            HubPanel(Modifier.fillMaxWidth()) {
+                WinProbChart(det.winProb, g.home.short, g.away.short)
+            }
+        }
+    }
+    if (det.drives.isNotEmpty()) {
+        item(key = "drt") {
+            HubSectionTitle("Drives", raw = true)
+        }
+        items(det.drives.size) { i ->
+            val d = det.drives[i]
+            val t = if (d.home) g.home else g.away
+            Column(Modifier.fillMaxWidth().padding(start = dpx(12), end = dpx(12), top = dpx(6))) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
+                    TeamLogo(t.logo, t.abbr, dpx(24))
+                    Text(raw = true, text = d.result, color = when (d.result) { "TD", "FG" -> Accent2; "INT", "MISSED FG" -> DS.Danger; else -> Tok.TextMid },
+                        fontSize = spx(15), fontWeight = FontWeight.Bold)
+                    Text(raw = true, text = d.label, color = Tok.TextHi, fontSize = spx(15), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(raw = true, text = d.plays.toString() + " plays · " + d.yards + " yds", color = Muted, fontSize = spx(14))
+                }
+                if (d.startPos >= 0 && d.endPos >= 0) {
+                    val lo = minOf(d.startPos, d.endPos)
+                    val hi = maxOf(d.startPos, d.endPos)
+                    Row(Modifier.fillMaxWidth().padding(top = dpx(4)).height(dpx(6)).clip(RoundedCornerShape(50)).background(DS.Overlay2)) {
+                        if (lo > 0) Box(Modifier.weight(lo.toFloat()))
+                        Box(Modifier.weight((hi - lo).coerceAtLeast(2).toFloat()).fillMaxHeight().background(if (d.home) Accent2 else DS.Overlay4))
+                        if (hi < 100) Box(Modifier.weight((100 - hi).toFloat()))
+                    }
+                }
+            }
+        }
+    }
+    if (det.scoring.isNotEmpty()) {
+        val hockey = SportData.league(g.league)?.path?.startsWith("hockey/") == true
+        item(key = "sct") {
+            HubSectionTitle("Punkte")
+        }
+        items(det.scoring.size) { i ->
+            val s = det.scoring[i]
+            FRow {
+                Text(raw = true, text = (if (hockey) "P" else "Q") + s.period + " " + s.clock, color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(76)))
+                Text(raw = true, text = s.text, color = Tok.TextHi, fontSize = spx(15), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(raw = true, text = s.home.toString() + " – " + s.away, color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

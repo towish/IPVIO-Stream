@@ -1,6 +1,7 @@
 package com.ipvio.stream
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,7 +47,8 @@ class SportMatchDetailTest {
               { "team": { "id": "34" }, "statistics": [
                 { "name": "passing", "text": "Houston Passing", "labels": ["C/ATT", "YDS", "TD"],
                   "athletes": [
-                    { "athlete": { "id": "4432577", "displayName": "C.J. Stroud", "jersey": "7" }, "stats": ["18/29", "199", "3"], "starter": true },
+                    { "athlete": { "id": "4432577", "displayName": "C.J. Stroud", "jersey": "7",
+                      "headshot": { "href": "https://a.espncdn.com/i/headshots/nfl/players/full/4432577.png" } }, "stats": ["18/29", "199", "3"], "starter": true },
                     { "athlete": { "id": "4031234", "displayName": "Davis Mills", "jersey": "10" }, "stats": ["2/3", "15", "0"], "starter": false }
                   ] }
               ] },
@@ -58,6 +60,19 @@ class SportMatchDetailTest {
               ] }
             ]
           },
+          "winprobability": [
+            { "homeWinPercentage": 0.5 }, { "homeWinPercentage": 0.6 }, { "homeWinPercentage": 0.17 }
+          ],
+          "drives": { "previous": [
+            { "team": { "id": "5" }, "result": "PUNT", "plays": [{}, {}, {}, {}, {}], "yards": 5,
+              "start": { "yardLine": 27, "text": "CLE 27" }, "end": { "yardLine": 32, "text": "CLE 32" } },
+            { "team": { "id": "34" }, "result": "TD", "plays": [{}, {}, {}, {}, {}, {}, {}, {}], "yards": 61,
+              "start": { "yardLine": 39, "text": "HOU 39" }, "end": { "yardLine": 95, "text": "HOU 5" } }
+          ] },
+          "scoringPlays": [
+            { "type": { "text": "Passing Touchdown" }, "text": "Nico Collins 12 Yd pass from C.J. Stroud",
+              "clock": { "displayValue": "9:29" }, "period": { "number": 1 }, "homeScore": 0, "awayScore": 7 }
+          ],
           "gameInfo": {
             "venue": { "fullName": "Huntington Bank Field" },
             "weather": { "temperature": 47, "conditionId": "Cloudy" }
@@ -94,6 +109,32 @@ class SportMatchDetailTest {
         assertTrue(topStats(emptyList()).isEmpty())
     }
 
+    @Test fun analyseWirdGeparst() {
+        val d = SportMatch.parse(json, game)
+        assertEquals(listOf(0.5f, 0.6f, 0.17f), d.winProb)
+        assertEquals(2, d.drives.size)
+        val first = d.drives[0]
+        assertTrue(first.home)
+        assertEquals("PUNT", first.result)
+        assertEquals(5, first.plays)
+        assertEquals(5, first.yards)
+        assertEquals(27, first.startPos)
+        assertEquals(32, first.endPos)
+        assertEquals("CLE 27 → CLE 32", first.label)
+        val second = d.drives[1]
+        assertFalse(second.home)
+        assertEquals("TD", second.result)
+        assertEquals(39, second.startPos)
+        assertEquals(95, second.endPos)
+        assertEquals(1, d.scoring.size)
+        val s = d.scoring[0]
+        assertEquals(1, s.period)
+        assertEquals("9:29", s.clock)
+        assertEquals(0, s.home)
+        assertEquals(7, s.away)
+        assertTrue(d.away?.blocks?.first()?.players?.first()?.headshot?.endsWith("4432577.png") == true)
+    }
+
     @Test fun topPlayersSortiertNachBesterSpalte() {
         val d = SportMatch.parse(json, game)
         val tb = topPlayers(d.away)!!
@@ -104,6 +145,8 @@ class SportMatchDetailTest {
         val home = topPlayers(d.home)!!
         assertEquals("Dillon Gabriel", home.players[0].name)
         assertNull(topPlayers(null))
-        assertNull(topPlayers(SportMatch.Side("", listOf(SportMatch.Block("", emptyList(), listOf(SportMatch.Player("X", "1", "", true, emptyList()))))))))
+        val emptySide = SportMatch.Side("", listOf(SportMatch.Block("", emptyList(),
+            listOf(SportMatch.Player("X", "1", "", true, emptyList())))))
+        assertNull(topPlayers(emptySide))
     }
 }

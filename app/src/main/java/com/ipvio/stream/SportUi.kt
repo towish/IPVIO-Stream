@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +41,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -53,6 +58,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 // Shared building blocks of the Sports Hub. They only use the existing design system
 // (DS, Tok, Accent1/2, Muted, PT.Live, FilterPill, HeroButton, EmptyState, Spinner, focusGlow, focusScale).
@@ -497,6 +503,40 @@ internal fun LazyListScope.statisticsItems(stats: List<SportMatch.Stat>) {
             Text(raw = true, text = s.away, color = if (lead == -1) Accent2 else if (lead == 1) Muted else Tok.TextHi,
                 fontSize = spx(17), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
         }
+    }
+}
+
+/** Win probability over the game (ESPN, team sports with data): line + area, 50% reference. */
+@Composable
+internal fun WinProbChart(probs: List<Float>, homeShort: String, awayShort: String) {
+    if (probs.size < 2) return
+    val last = probs.last().coerceIn(0f, 1f)
+    val homePct = (last * 100f).roundToInt()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(raw = true, text = homeShort + " " + homePct + "%", color = Accent2, fontSize = spx(16), fontWeight = FontWeight.Bold)
+        Text(raw = true, text = "50%", color = Muted, fontSize = spx(14))
+        Text(raw = true, text = awayShort + " " + (100 - homePct) + "%", color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold)
+    }
+    Canvas(Modifier.fillMaxWidth().height(dpx(140))) {
+        val w = size.width
+        val h = size.height
+        fun y(p: Float) = h * (1f - p.coerceIn(0f, 1f))
+        fun x(i: Int) = if (probs.size > 1) w * i.toFloat() / (probs.size - 1).toFloat() else 0f
+        drawLine(Muted, Offset(0f, h / 2f), Offset(w, h / 2f), strokeWidth = 1f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f))
+        val line = Path().apply {
+            moveTo(0f, y(probs[0]))
+            for (i in 1 until probs.size) lineTo(x(i), y(probs[i]))
+        }
+        val area = Path().apply {
+            addPath(line)
+            lineTo(w, h)
+            lineTo(0f, h)
+            close()
+        }
+        drawPath(area, Accent2.copy(alpha = 0.15f))
+        drawPath(line, Accent2, style = Stroke(width = 5f))
+        drawCircle(Accent2, radius = 7f, center = Offset(x(probs.size - 1), y(probs.last())))
     }
 }
 
