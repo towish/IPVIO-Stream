@@ -285,7 +285,7 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
             // Two featured games side by side (one full width if there is only one)
             tops.isNotEmpty() -> item(key = "featured") {
                 Row(horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
-                    tops.forEach { g -> Box(Modifier.weight(1f)) { FeaturedPanel(g, hub) } }
+                    tops.forEach { g -> Column(Modifier.weight(1f)) { FeaturedPanel(g, hub) } }
                 }
             }
             feed.loading -> item(key = "load") { HubLoading("Lade Spiele …") }
