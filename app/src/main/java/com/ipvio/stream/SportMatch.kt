@@ -353,7 +353,7 @@ object SportMatch {
             "", "", emptyList(), emptyList(), false,
             homeLines = if (started) periodLines(gbp?.optJSONObject("home")) else emptyList(),
             awayLines = if (started) periodLines(gbp?.optJSONObject("visitor")) else emptyList(),
-            stars = stars
+            stars = stars, scoring = scoring
         )
     }
 
