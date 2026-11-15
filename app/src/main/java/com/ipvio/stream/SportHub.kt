@@ -223,13 +223,26 @@ private fun featured(games: List<SportData.Game>, hasCh: (SportData.Game) -> Boo
         ?: games.filter { it.state == 2 && !it.solo }.maxByOrNull { it.start }
 }
 
+/** Featured games: the same pick as [featured], twice (second pick from the remaining games). */
+internal fun featuredTwo(games: List<SportData.Game>, hasCh: (SportData.Game) -> Boolean): List<SportData.Game> {
+    val first = featured(games, hasCh) ?: return emptyList()
+    val second = featured(games.filter { it.key != first.key }, hasCh)
+    return listOfNotNull(first, second)
+}
+
+/** Games grouped by sport, in the hub's sport order; sports without games are skipped. */
+internal fun groupBySport(games: List<SportData.Game>): List<Pair<SportData.Sport, List<SportData.Game>>> {
+    val bySport = games.groupBy { SportData.sportOf(it) }
+    return SportData.SPORTS.mapNotNull { s -> bySport[s.key]?.let { s to it } }
+}
+
 /** Everything the overview shows, computed off the main thread (filters, sorting and the channel match per game are too slow in composition). */
 private class HubOverviewModel(
     val games: List<SportData.Game>,
     val liveMine: List<SportData.Game>,
     val upcoming: List<SportData.Game>,
     val finals: List<SportData.Game>,
-    val top: SportData.Game?,
+    val tops: List<SportData.Game>,
     val withCh: Set<String>,
     val popular: List<SportData.League>,
     val newsLeagues: List<SportData.League>,
@@ -245,11 +258,11 @@ private fun buildOverview(raw: List<SportData.Game>, hub: HubCtx): HubOverviewMo
     val upcoming = games.filter { it.state == 0 && statusKind(it) == 0 }.sortedBy { it.start }
     upcoming.take(30).forEach { ch(it) }
     val finals = games.filter { it.state == 2 }.sortedByDescending { it.start }
-    val top = featured(games) { ch(it) }
+    val tops = featuredTwo(games) { ch(it) }
     val popular = SportData.POPULAR.mapNotNull { SportData.league(it) }.filter { SportLeagues.on(it) }
     val newsLeagues = (popular.filter { p -> games.any { it.league == p.name } } + games.mapNotNull { SportData.leagueOf(it) }).distinctBy { it.path }
     val counts = games.groupingBy { SportData.sportOf(it) }.eachCount()
-    return HubOverviewModel(games, liveMine, upcoming, finals, top, hasCh.filterValues { it }.keys, popular, newsLeagues, counts)
+    return HubOverviewModel(games, liveMine, upcoming, finals, tops, hasCh.filterValues { it }.keys, popular, newsLeagues, counts)
 }
 
 @Composable
@@ -264,12 +277,17 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
     val liveMine = m.liveMine
     val upcoming = m.upcoming
     val finals = m.finals
-    val top = m.top
+    val tops = m.tops
     val popular = m.popular
     val newsLeagues = m.newsLeagues
     LazyColumn(contentPadding = PaddingValues(horizontal = DS.PageX, vertical = dpx(8)), verticalArrangement = Arrangement.spacedBy(dpx(18))) {
         when {
-            top != null -> item(key = "featured") { FeaturedPanel(top, hub) }
+            // Two featured games side by side (one full width if there is only one)
+            tops.isNotEmpty() -> item(key = "featured") {
+                Row(horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
+                    tops.forEach { g -> Box(Modifier.weight(1f)) { FeaturedPanel(g, hub) } }
+                }
+            }
             feed.loading -> item(key = "load") { HubLoading("Lade Spiele …") }
             feed.failed -> item(key = "err") {
                 HubEmpty(AIcon.Warning, "Daten konnten nicht geladen werden", "ESPN antwortet gerade nicht. Prüfe die Internetverbindung und versuche es erneut.", "Erneut versuchen") { onRetry() }
@@ -278,23 +296,41 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
         }
         if (liveMine.isNotEmpty()) item(key = "live") {
             HubSectionTitle("Jetzt live", action = "Alle zeigen") { hub.goTab(1, null) }
-            Spacer(Modifier.height(dpx(8)))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(14)), contentPadding = PaddingValues(vertical = dpx(8))) {
-                items(liveMine.take(30), key = { it.key }) { g -> MatchCard(g, true) { hub.open(g) } }
+            Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
+                for ((sport, list) in groupBySport(liveMine)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+                        SportGroupHeader(sport, list.count { it.state == 1 }, list.size)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
+                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, true) { hub.open(g) } }
+                        }
+                    }
+                }
             }
         }
         if (upcoming.isNotEmpty()) item(key = "up") {
             HubSectionTitle("Demnächst", action = "Spielplan") { hub.goTab(2, null) }
-            Spacer(Modifier.height(dpx(8)))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(14)), contentPadding = PaddingValues(vertical = dpx(8))) {
-                items(upcoming.take(30), key = { it.key }) { g -> MatchCard(g, g.key in m.withCh) { hub.open(g) } }
+            Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
+                for ((sport, list) in groupBySport(upcoming)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+                        SportGroupHeader(sport, 0, list.size)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
+                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, g.key in m.withCh) { hub.open(g) } }
+                        }
+                    }
+                }
             }
         }
         if (finals.isNotEmpty()) item(key = "fin") {
             HubSectionTitle("Ergebnisse von heute")
-            Spacer(Modifier.height(dpx(8)))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(14)), contentPadding = PaddingValues(vertical = dpx(8))) {
-                items(finals.take(30), key = { it.key }) { g -> MatchCard(g, false) { hub.open(g) } }
+            Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
+                for ((sport, list) in groupBySport(finals)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+                        SportGroupHeader(sport, 0, list.size)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
+                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, false) { hub.open(g) } }
+                        }
+                    }
+                }
             }
         }
         if (popular.isNotEmpty()) item(key = "leagues") {
@@ -325,15 +361,15 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
     }
 }
 
-/** Big panel of the featured game: competition, teams with logos, score or start time, Watch Live and Match Center. */
+/** Big panel of a featured game: competition, teams with big logos, score or start time, Watch Live and Match Center. */
 @Composable
 private fun FeaturedPanel(g: SportData.Game, hub: HubCtx) {
     val shape = RoundedCornerShape(DS.RadiusL)
     val chans = hub.chans(g)
     val l = SportData.leagueOf(g)
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(featuredBrush(g)).border(1.dp, Tok.Line, shape).padding(dpx(22)),
-        verticalArrangement = Arrangement.spacedBy(dpx(14))
+        Modifier.fillMaxWidth().clip(shape).background(featuredBrush(g)).border(1.dp, Tok.Line, shape).padding(dpx(24)),
+        verticalArrangement = Arrangement.spacedBy(dpx(16))
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
             if (l != null) TeamLogo(SportData.leagueLogos[l.path], "", dpx(30))
@@ -341,7 +377,7 @@ private fun FeaturedPanel(g: SportData.Game, hub: HubCtx) {
                 fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (SportHubFavs.isFavGame(g)) AppIcon(AIcon.Star, DS.Gold, size = dpx(22))
         }
-        MatchHeader(g, 110)
+        MatchHeader(g, 128)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dpx(14), Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
             WatchLiveButton(chans) { hub.watch(g) }
             HeroButton("Match Center", AIcon.Info, false, Modifier, 46) { hub.open(g) }

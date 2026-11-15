@@ -278,30 +278,63 @@ internal fun TeamName(t: SportData.Team, state: Int, modifier: Modifier, end: Bo
     }
 }
 
-/** Card for horizontal rows (Live now, Upcoming). Field events show the leaders instead of two teams. */
+/** Emoji per sport, for the section headers of the overview (same style as the guide collections). */
+internal fun sportEmoji(key: String): String = when (key) {
+    "soccer" -> "⚽"
+    "basketball" -> "🏀"
+    "nfl" -> "🏈"
+    "nhl" -> "🏒"
+    "tennis" -> "🎾"
+    "f1" -> "🏎️"
+    "mlb" -> "⚾"
+    "ufc" -> "🥊"
+    "cricket" -> "🏏"
+    "golf" -> "⛳"
+    else -> "🏆"
+}
+
+/** Header of one sport inside a section (live / upcoming / results): emoji, German name, game count. */
+@Composable
+internal fun SportGroupHeader(sport: SportData.Sport, live: Int, total: Int) {
+    Row(Modifier.fillMaxWidth().padding(start = dpx(4), end = dpx(4)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
+        Text(raw = true, text = sportEmoji(sport.key), fontSize = spx(20))
+        Text(Lang.tr(sport.label), color = Tok.TextHi, fontSize = spx(18), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+        if (live > 0) Text("LIVE", color = PT.Live, fontSize = spx(14), fontWeight = FontWeight.ExtraBold)
+        Text(if (total == 1) "1 Spiel" else "$total Spiele", color = Muted, fontSize = spx(14))
+    }
+}
+
+/**
+ * Compact card for the overview rows (Live now, Upcoming, Results): big logos and the score only, no team names –
+ * the teams are known by their logos. About 7 cards fit per row instead of 4, so two to three times more
+ * results are visible. Field events show the leader instead of two teams.
+ */
 @Composable
 internal fun MatchCard(g: SportData.Game, hasChan: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    HubCardBox(modifier.width(dpx(330)), onClick = onClick) {
+    HubCardBox(modifier.width(dpx(190)), onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { MatchStatus(g) }
             if (SportHubFavs.isFavGame(g)) AppIcon(AIcon.Star, DS.Gold, size = dpx(18))
         }
         Text(raw = true, text = listOf(g.groupName, g.note).filter { it.isNotBlank() }.distinct().joinToString(" · "), color = Muted, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (g.solo) {
-            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            g.field.take(3).forEach { e ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
-                    Text(raw = true, text = e.pos, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(28)))
-                    TeamLogo(e.flag, "", dpx(20))
-                    Text(raw = true, text = e.name, color = Tok.TextHi, fontSize = spx(14), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (e.value.isNotBlank()) Text(raw = true, text = e.value, color = Tok.TextHi, fontSize = spx(14), fontWeight = FontWeight.Bold)
+            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val lead = g.field.firstOrNull()
+            if (lead != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
+                Text(raw = true, text = lead.pos, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(28)))
+                TeamLogo(lead.flag, "", dpx(20))
+                Text(raw = true, text = lead.name, color = Tok.TextHi, fontSize = spx(14), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (lead.value.isNotBlank()) Text(raw = true, text = lead.value, color = Tok.TextHi, fontSize = spx(14), fontWeight = FontWeight.Bold)
+            } else Text("Noch keine Ergebnisse", color = Muted, fontSize = spx(13))
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Top) {
+                listOf(g.home, g.away).forEach { t ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(4))) {
+                        TeamLogo(t.logo, t.abbr, dpx(64))
+                        val dim = g.state == 2 && !t.winner && t.score != null
+                        Text(raw = true, text = t.score ?: "–", color = if (dim) Muted else Tok.TextHi, fontSize = spx(if ((t.score?.length ?: 0) > 6) 13 else 22), fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    }
                 }
-            }
-            if (g.field.isEmpty()) Text("Noch keine Ergebnisse", color = Muted, fontSize = spx(13))
-        } else listOf(g.home, g.away).forEach { t ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
-                TeamName(t, g.state, Modifier.weight(1f))
-                Text(raw = true, text = t.score ?: "", color = Tok.TextHi, fontSize = spx(if ((t.score?.length ?: 0) > 6) 13 else 20), fontWeight = FontWeight.ExtraBold, maxLines = 1)
             }
         }
         if (hasChan) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(6))) {
@@ -570,5 +603,5 @@ internal fun MatchHeader(g: SportData.Game, logo: Int = 96) {
 internal fun featuredBrush(g: SportData.Game): Brush {
     val a = teamColor(g.home.color) ?: Accent1
     val b = teamColor(g.away.color) ?: Accent2
-    return Brush.horizontalGradient(listOf(a.copy(alpha = 0.30f), Tok.Card, b.copy(alpha = 0.30f)))
+    return Brush.horizontalGradient(listOf(a.copy(alpha = 0.45f), Tok.Card, b.copy(alpha = 0.45f)))
 }
