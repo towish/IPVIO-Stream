@@ -59,9 +59,10 @@ android {
     buildTypes {
         // Test build (Run in Android Studio / debug APK): own app ID, so the private IPVIO app on the TV
         // is not overwritten. Both apps can be installed side by side (own data, own name).
+        // Own name ("IPVIO Test") so the test build is recognizable next to the release app.
         debug {
             applicationIdSuffix = ".test"
-            manifestPlaceholders["appLabel"] = "IPVIO Stream"
+            manifestPlaceholders["appLabel"] = "IPVIO Test"
         }
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
