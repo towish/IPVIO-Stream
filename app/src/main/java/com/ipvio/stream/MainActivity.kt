@@ -486,6 +486,7 @@ private fun AppContent() {
                 tab = tab, onTab = { goTab(it) }, states = states,
                 onOpen = open,
                 onPlayNow = { i -> LastFocus.pending = i.id; if (i.kind == Kind.SERIES) pushTop(i) else { if (i.kind != Kind.LIVE && !i.id.startsWith("rec:")) pushTop(i); start(i, i.title, i.url) } },
+                onPlayDirect = { i -> start(i, i.title, i.url) },
                 onResume = { e, i ->
                     LastFocus.pending = i.id
                     if (i.kind != Kind.LIVE) pushTop(i)

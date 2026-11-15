@@ -224,4 +224,67 @@ class ChlFeedTest {
         assertEquals("Colisée Desjardins", d.venue)
         assertEquals("", d.attendance)
     }
+
+    // ───────── CHL highlights ─────────
+
+    @Test
+    fun highlightStadtAusName() {
+        assertEquals("Charlottetown", ChlHighlights.cityOf(game32756.home))
+        assertEquals("Québec", ChlHighlights.cityOf(game32756.away))
+        val cape = SportData.Team("Cape Breton Eagles", "Eagles", "Cap", null, "0", false)
+        assertEquals("Cape Breton", ChlHighlights.cityOf(cape))
+    }
+
+    @Test
+    fun highlightTitelStadtUndSpitzname() {
+        // game32756: home Charlottetown Islanders 1, away Québec Remparts 3
+        assertTrue(ChlHighlights.matchTitle("Charlottetown 1 Quebec 3", game32756, 1, 3))
+        assertTrue(ChlHighlights.matchTitle("Quebec 3 Charlottetown 1", game32756, 1, 3))
+        assertTrue(ChlHighlights.matchTitle("Islanders 1 Remparts 3", game32756, 1, 3))
+        assertTrue(ChlHighlights.matchTitle("Remparts 3 Islanders 1", game32756, 1, 3))
+        assertTrue(ChlHighlights.matchTitle("Highlights | Charlottetown 1 Quebec 3", game32756, 1, 3))
+        assertTrue(ChlHighlights.matchTitle("Quebec 3-1 Charlottetown", game32756, 1, 3))
+        assertFalse(ChlHighlights.matchTitle("Oceanic 2 Wildcats 8", game32756, 1, 3))
+        assertFalse(ChlHighlights.matchTitle("Quebec 3 Charlottetown 2", game32756, 1, 3))
+        assertFalse(ChlHighlights.matchTitle("Quebec 3 Halifax 1", game32756, 1, 3))
+    }
+
+    @Test
+    fun highlightTitelAkzenteWerdenGefaltet() {
+        val g = SportData.Game(
+            "32999", "LHJMQ", "Eishockey", 1794610800L, 2, "Final",
+            SportData.Team("Rimouski Océanic", "Océanic", "Rim", null, "2", false),
+            SportData.Team("Moncton Wildcats", "Wildcats", "Mon", null, "8", true)
+        )
+        assertTrue(ChlHighlights.matchTitle("Oceanic 2 Wildcats 8", g, 2, 8))
+        assertTrue(ChlHighlights.matchTitle("Wildcats 8 Oceanic 2", g, 2, 8))
+        assertFalse(ChlHighlights.matchTitle("Oceanic 3 Wildcats 8", g, 2, 8))
+    }
+
+    @Test
+    fun highlightMp4Extraktion() {
+        val html = """<html><head><meta itemprop="contentUrl" content="https://cdn.target-video.com/live/partners/31038/sd/98765.mp4"></head><body>Video</body></html>"""
+        assertEquals(
+            "https://cdn.target-video.com/live/partners/31038/sd/98765.mp4",
+            ChlHighlights.extractMp4(html)
+        )
+        assertNull(ChlHighlights.extractMp4("<html><body>kein Video hier</body></html>"))
+        assertNull(ChlHighlights.extractMp4("""<meta itemprop="contentUrl" content="https://example.com/poster.jpg">"""))
+    }
+
+    @Test
+    fun highlightSucheFindetVideo() {
+        val html = """
+            <html><body>
+            <h2><a href="/lhjmq/en/video/oceanic-2-wildcats-8/">Oceanic 2 Wildcats 8</a></h2>
+            <h2><a href="https://chl.ca/lhjmq/en/video/charlottetown-1-quebec-3-highlights/">Charlottetown 1 Quebec 3 | Highlights</a></h2>
+            <h2><a href="/lhjmq/en/news/quebec-remparts-sign-player/">Quebec Remparts sign a player</a></h2>
+            </body></html>
+        """.trimIndent()
+        assertEquals(
+            "https://chl.ca/lhjmq/en/video/charlottetown-1-quebec-3-highlights/",
+            ChlHighlights.parseSearchPage(html, game32756, 1, 3)
+        )
+        assertNull(ChlHighlights.parseSearchPage("<html><body><a href=\"/lhjmq/en/video/oceanic-2-wildcats-8/\">Oceanic 2 Wildcats 8</a></body></html>", game32756, 1, 3))
+    }
 }

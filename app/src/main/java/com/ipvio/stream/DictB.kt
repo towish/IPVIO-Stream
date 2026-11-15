@@ -72,6 +72,7 @@ Keine Sammlungen¦No collections yet¦¦¦¦¦¦Aucune collection¦
 Sortierung¦Sort order¦¦¦¦¦¦Tri¦
 Eine Sammlung fasst Sender nach Stichwörtern zusammen – zum Beispiel alle Québec-Sender, egal in welcher Kategorie des Anbieters sie stehen. Ein Stichwort trifft, wenn ein Wort im Namen damit beginnt.¦A collection groups channels by keywords – for example all Québec channels, no matter which provider category they are in. A keyword matches when a word in the name starts with it.¦¦¦¦¦¦Une collection regroupe des chaînes par mots-clés — par exemple toutes les chaînes du Québec, peu importe la catégorie du fournisseur. Un mot-clé correspond quand un mot du nom commence par lui.¦
 3 Sterne¦3 stars¦¦¦¦¦¦3 étoiles¦
+Highlights¦Highlights¦¦¦¦¦¦Faits saillants¦
 Neu im Streaming¦New on streaming¦¦¦¦¦¦Nouveautés streaming¦
 Neue Filme und Serien auf Netflix, Prime Video, Crave und Disney+¦New movies and series on Netflix, Prime Video, Crave and Disney+¦¦¦¦¦¦Nouveaux films et séries sur Netflix, Prime Video, Crave et Disney+¦
 Neu auf {0}¦New on {0}¦¦¦¦¦¦Nouveau sur {0}¦

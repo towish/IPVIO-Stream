@@ -210,7 +210,7 @@ private fun topRated(list: List<Item>): List<Item> =
 @Composable
 fun HomeScreen(
     tab: Int, onTab: (Int) -> Unit, states: List<LazyListState>,
-    onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit,
+    onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit, onPlayDirect: (Item) -> Unit,
     onResume: (Entry, Item) -> Unit, onBrowse: (BrowseReq) -> Unit,
     onCategories: (CatReq) -> Unit, onAdd: () -> Unit
 ) {
@@ -607,7 +607,7 @@ fun HomeScreen(
                     }
                 }
                 tab == 3 -> LiveTab(live, liveP, favLive, onOpen, onPlayNow)
-                tab == MenuLogic.SPORT -> SportHub(live) { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }
+                tab == MenuLogic.SPORT -> SportHub(live, onPlayDirect = onPlayDirect) { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }
                 // The selected row stays in the lower half (PivotSpec); rows above are hidden so that at the top
                 // title and info of the selected title are free (billboard)
                 else -> CompositionLocalProvider(

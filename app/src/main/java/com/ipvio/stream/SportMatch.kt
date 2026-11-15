@@ -53,7 +53,9 @@ object SportMatch {
         val h2hTitle: String, val h2h: List<H2H>, val form: List<Form>, val soccer: Boolean, val weather: String = "",
         val winProb: List<Float> = emptyList(), val drives: List<Drive> = emptyList(), val scoring: List<Scoring> = emptyList(),
         /** CHL only: goals per period (ESPN games carry them on the Game itself) and the three stars. */
-        val homeLines: List<String> = emptyList(), val awayLines: List<String> = emptyList(), val stars: List<String> = emptyList()
+        val homeLines: List<String> = emptyList(), val awayLines: List<String> = emptyList(), val stars: List<String> = emptyList(),
+        /** CHL only: direct MP4 of the game highlights on chl.ca (null until resolved, or if none exists yet). */
+        var highlightUrl: String? = null
     )
     /** One drive (football): field position is absolute (0 = home goal line, 100 = away goal line). */
     class Drive(val home: Boolean, val result: String, val plays: Int, val yards: Int, val startPos: Int, val endPos: Int, val label: String)
@@ -400,6 +402,8 @@ object SportMatch {
             Net.withTimeouts(8, 12).newCall(req).execute().use { r ->
                 if (!r.isSuccessful) return@withContext hit?.second
                 val d = parseChl(r.body?.string().orEmpty(), g) ?: return@withContext hit?.second
+                // Highlights: best effort only — a failed lookup must never lose the box score
+                if (g.state == 2) d.highlightUrl = runCatching { ChlHighlights.findHighlight(l, g) }.getOrNull()
                 synchronized(cache) { if (cache.size > 80) cache.clear(); cache[key] = now to d }
                 d
             }
@@ -489,6 +493,18 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
             MatchHeader(g, 84)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
                 WatchLiveButton(chans) { hub.watch(g) }
+                // CHL highlights: direct MP4, played in the app's own player (only when a video exists)
+                det?.highlightUrl?.let { hl ->
+                    HeroButton(Lang.tr("Highlights"), AIcon.Play, true, Modifier.trackFocus(), 46) {
+                        hub.playDirect(
+                            Item(
+                                "hl:${g.id}", Kind.MOVIE,
+                                Lang.tr("Highlights") + " · " + g.home.short + " – " + g.away.short,
+                                null, hl, null, Lang.tr("Highlights")
+                            )
+                        )
+                    }
+                }
                 FilterPill(if (chans.isEmpty()) "Sender zuordnen" else Lang.tr("Sender") + " (" + chans.size + ")", false, Modifier.trackFocus(), aicon = AIcon.Live, raw = chans.isNotEmpty()) {
                     hub.nav.open(HubPage.Watch(g))
                 }

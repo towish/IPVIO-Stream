@@ -78,10 +78,12 @@ object SportFeed {
 }
 
 /** What the tabs and pages of the hub need: page stack, channels, play, change tab. */
-class HubCtx(val nav: HubNav, val live: List<Item>, private val onPlay: (Item, List<Item>) -> Unit, val goTab: (Int, String?) -> Unit) {
+class HubCtx(val nav: HubNav, val live: List<Item>, private val onPlay: (Item, List<Item>) -> Unit, private val onPlayDirect: (Item) -> Unit, val goTab: (Int, String?) -> Unit) {
     fun chans(g: SportData.Game): List<Item> = SportWatch.channels(g, live)
     /** Remember the open pages (Match Center, Watch Live …): Back from the player returns to exactly there. */
     fun play(ch: Item, list: List<Item>) { HubMemory.keep = nav.stack.toList(); nav.clear(); onPlay(ch, list) }
+    /** Play an arbitrary URL directly (e.g. a CHL highlight MP4): Back from the player returns to the hub pages. */
+    fun playDirect(item: Item) { HubMemory.keep = nav.stack.toList(); nav.clear(); onPlayDirect(item) }
     /** Watch Live: start the best channel directly, otherwise show the Watch Live page (assign by hand). */
     fun watch(g: SportData.Game) {
         val c = chans(g)
@@ -106,7 +108,7 @@ private val HUB_TABS = listOf("Übersicht", "Live", "Spielplan", "Ligen", "Teams
  * Match Center, League Center, Team Center, players and Watch Live open as pages above the tabs; Back closes them.
  */
 @Composable
-fun SportHub(live: List<Item>, onPlay: (Item, List<Item>) -> Unit) {
+fun SportHub(live: List<Item>, onPlay: (Item, List<Item>) -> Unit, onPlayDirect: (Item) -> Unit) {
     SideEffect { ContentFocus.tab = MenuLogic.SPORT }
     val ctx = LocalContext.current
     SportFavs.init(ctx)
@@ -120,7 +122,7 @@ fun SportHub(live: List<Item>, onPlay: (Item, List<Item>) -> Unit) {
     if (scoreDlg) ScoreOverlayDialog { scoreDlg = false }
     val nav = remember { HubNav().also { n -> HubMemory.keep.forEach { n.open(it) }; HubMemory.keep = emptyList() } }
     val hub = remember(live, nav) {
-        HubCtx(nav, live, onPlay) { t, s -> tab = t; HubMemory.tab = t; if (s != null || t == 1) { sport = s; HubMemory.sport = s } }
+        HubCtx(nav, live, onPlay, onPlayDirect) { t, s -> tab = t; HubMemory.tab = t; if (s != null || t == 1) { sport = s; HubMemory.sport = s } }
     }
 
     // Today's games of all active leagues, each league with its own refresh interval
