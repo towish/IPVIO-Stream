@@ -493,16 +493,16 @@ internal fun LazyListScope.statisticsItems(stats: List<SportMatch.Stat>) {
         val lead = if (a != null && b != null && a != b) if (a > b) 1 else -1 else 0
         FRow {
             Text(raw = true, text = s.home, color = if (lead == 1) Accent2 else if (lead == -1) Muted else Tok.TextHi,
-                fontSize = spx(15), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(92)))
+                fontSize = spx(14), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(92)))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(raw = true, text = s.label, color = Muted, fontSize = spx(14), textAlign = TextAlign.Center)
+                Text(raw = true, text = s.label, color = Muted, fontSize = spx(13), textAlign = TextAlign.Center)
                 if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(3)).height(dpx(5)).clip(RoundedCornerShape(50))) {
                     Box(Modifier.weight(maxOf(a, 0.01f)).fillMaxHeight().background(Accent2))
                     Box(Modifier.weight(maxOf(b, 0.01f)).fillMaxHeight().background(DS.Overlay4))
                 }
             }
             Text(raw = true, text = s.away, color = if (lead == -1) Accent2 else if (lead == 1) Muted else Tok.TextHi,
-                fontSize = spx(15), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(92)))
+                fontSize = spx(14), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(92)))
         }
     }
 }
