@@ -60,8 +60,14 @@ object SportMatch {
         /** CHL only: goals per period (ESPN games carry them on the Game itself) and the three stars. */
         val homeLines: List<String> = emptyList(), val awayLines: List<String> = emptyList(), val stars: List<String> = emptyList(),
         /** CHL only: direct MP4 of the game highlights on chl.ca (null until resolved, or if none exists yet). */
-        var highlightUrl: String? = null
+        var highlightUrl: String? = null,
+        /** NHL (ESPN plays): shot attempts with rink coordinates, for the shot chart. */
+        val shots: List<Shot> = emptyList(),
+        /** NHL (ESPN onIce): players on the ice right now / on the last shift, resolved against the box score. */
+        val onIceHome: List<Player> = emptyList(), val onIceAway: List<Player> = emptyList()
     )
+    /** One shot attempt on the rink: x -100..100 (goal lines at -89/89), y -42.5..42.5, ESPN coordinate system. */
+    class Shot(val x: Float, val y: Float, val home: Boolean, val goal: Boolean)
     /** One drive (football): field position is absolute (0 = home goal line, 100 = away goal line). */
     class Drive(val home: Boolean, val result: String, val plays: Int, val yards: Int, val startPos: Int, val endPos: Int, val label: String)
     /** One scoring play with the score right after it. */
@@ -205,11 +211,30 @@ object SportMatch {
             Scoring(it.optJSONObject("period")?.optInt("number") ?: 0, it.optJSONObject("clock")?.optString("displayValue").orEmpty(),
                 it.optString("text"), it.optInt("homeScore"), it.optInt("awayScore"))
         }.filter { it.text.isNotBlank() }
+        // Shot chart data (NHL): every shot attempt of the plays feed carries rink coordinates
+        val shots = objs(o.optJSONArray("plays")).mapNotNull { p ->
+            val t = p.optJSONObject("type")?.optString("text").orEmpty()
+            if (t != "Shot" && t != "Goal" && !t.startsWith("Missed") && !t.contains("Blocked")) return@mapNotNull null
+            val c = p.optJSONObject("coordinate") ?: return@mapNotNull null
+            if (!c.has("x") || !c.has("y")) return@mapNotNull null
+            Shot(c.optDouble("x").toFloat().coerceIn(-100f, 100f), c.optDouble("y").toFloat().coerceIn(-42.5f, 42.5f),
+                p.optJSONObject("team")?.optString("id") == g.home.id, t == "Goal")
+        }
+        // On the ice right now (NHL): ESPN lists athlete ids per team; resolve them against the box score players
+        val byId = HashMap<String, Player>()
+        (home?.players.orEmpty() + away?.players.orEmpty()).forEach { if (it.id.isNotBlank()) byId[it.id] = it }
+        var onIceHome = emptyList<Player>()
+        var onIceAway = emptyList<Player>()
+        for (grp in objs(o.optJSONArray("onIce"))) {
+            val ps = objs(grp.optJSONArray("entries")).mapNotNull { byId[it.optString("athleteid")] }
+            when (grp.optString("teamId")) { g.home.id -> onIceHome = ps; g.away.id -> onIceAway = ps }
+        }
         return Detail(
             statMap.map { Stat(it.key, it.value[0], it.value[1]) }, home, away, events, comments,
             gi?.optJSONObject("venue")?.optString("fullName").orEmpty(), gi?.optString("attendance").orEmpty().takeIf { it != "0" }.orEmpty(),
             summary, h2hTitle, h2h, form, rosters.isNotEmpty() || g.league.let { SportData.league(it)?.path?.startsWith("soccer/") == true },
-            weather = weather, winProb = winProb, drives = drives, scoring = scoring
+            weather = weather, winProb = winProb, drives = drives, scoring = scoring,
+            shots = shots, onIceHome = onIceHome, onIceAway = onIceAway
         )
     }
 
@@ -477,6 +502,20 @@ internal fun topScorers(det: SportMatch.Detail, g: SportData.Game, count: Int = 
     return all.sortedWith(compareByDescending<Scorer> { it.points }.thenByDescending { it.goals }.thenByDescending { it.assists }).take(count)
 }
 
+/** The (first) goalie of a side with his SA/SV/SV% line, for the goalie duel strip; null without a goalie block. */
+private fun goalieOf(side: SportMatch.Side?): Pair<SportMatch.Player, String>? {
+    val b = side?.blocks?.firstOrNull { bl -> bl.labels.any { it.equals("SA", ignoreCase = true) || it.equals("SV", ignoreCase = true) } } ?: return null
+    val p = b.players.firstOrNull { it.starter } ?: b.players.firstOrNull() ?: return null
+    val parts = ArrayList<String>()
+    for ((i, lab) in b.labels.withIndex()) {
+        if (lab.equals("SA", ignoreCase = true) || lab.equals("SV", ignoreCase = true) || lab.contains("%")) {
+            val v = p.stats.getOrNull(i)?.takeIf { it.isNotBlank() } ?: continue
+            parts.add("$lab $v")
+        }
+    }
+    return p to parts.joinToString(" · ")
+}
+
 /** Match Center: header with teams, score and Watch Live; tabs appear only if ESPN delivers data for them and fit the sport. */
 @Composable
 internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
@@ -559,6 +598,28 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                             }
                         }
                     }
+                    val gh = goalieOf(det.home)
+                    val ga = goalieOf(det.away)
+                    if (gh != null && ga != null) {
+                        item(key = "duel") { HubSectionTitle("Torhüterduell") }
+                        item(key = "duelr") {
+                            HubPanel(Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
+                                    TeamLogo(gh.first.headshot, gh.first.jersey, dpx(44))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(raw = true, text = gh.first.name, color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(raw = true, text = gh.second, color = Muted, fontSize = spx(13))
+                                    }
+                                    Text(raw = true, text = "vs", color = Muted, fontSize = spx(14), fontWeight = FontWeight.Bold)
+                                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                        Text(raw = true, text = ga.first.name, color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(raw = true, text = ga.second, color = Muted, fontSize = spx(13))
+                                    }
+                                    TeamLogo(ga.first.headshot, ga.first.jersey, dpx(44))
+                                }
+                            }
+                        }
+                    }
                     if (det.stats.isNotEmpty()) {
                         item(key = "sh") { HubSectionTitle("Statistik") }
                         statisticsItems(det.stats)
@@ -581,17 +642,45 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: SportData.Game, det: SportMatch.Detail?, done: Boolean, kind: Int, l: SportData.League?, hub: HubCtx) {
-    // Compact info strip: report sentence plus the facts (venue, crowd, weather, TV) on one line — the detail sections follow below
-    item(key = "panels") {
-        HubPanel(Modifier.fillMaxWidth()) {
-            Text("Spielbericht", color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold)
-            val text = det?.summary?.takeIf { it.isNotBlank() } ?: SportMatch.sentence(g)
-            if (text.isNotBlank()) Text(raw = true, text = text, color = Tok.TextMid, fontSize = spx(14), maxLines = 3, overflow = TextOverflow.Ellipsis)
-            val info = listOf(g.note, det?.venue?.takeIf { it.isNotBlank() } ?: g.venue, det?.weather?.takeIf { it.isNotBlank() } ?: "",
-                g.tv.takeIf { it.isNotBlank() }?.let { "TV: $it" } ?: "",
-                det?.attendance?.takeIf { it.isNotBlank() }?.let { Lang.tr("Zuschauer") + ": " + it } ?: "").filter { it.isNotBlank() }.distinct()
-            if (info.isNotEmpty()) Text(raw = true, text = info.joinToString("  ·  "), color = Muted, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (kind == SportData.KIND_TEAM && det == null) Text(if (done) "Keine Details verfügbar." else "Lade Details …", color = Muted, fontSize = spx(13))
+    val scorers = if (det != null && !det.soccer) topScorers(det, g) else emptyList()
+    val facts = listOf(g.note, det?.venue?.takeIf { it.isNotBlank() } ?: g.venue, det?.weather?.takeIf { it.isNotBlank() } ?: "",
+        g.tv.takeIf { it.isNotBlank() }?.let { "TV: $it" } ?: "",
+        det?.attendance?.takeIf { it.isNotBlank() }?.let { Lang.tr("Zuschauer") + ": " + it } ?: "").filter { it.isNotBlank() }.distinct().joinToString("  ·  ")
+    if (scorers.isNotEmpty() && det != null) {
+        // Hero: player of the game with his photo, his line and the story of the match (designs mix 6+7+8)
+        val top = scorers[0]
+        item(key = "hero") {
+            HubPanel(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
+                    TeamLogo(top.player.headshot, top.player.jersey, dpx(104))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(3))) {
+                        Text("Spieler des Spiels", color = Accent2, fontSize = spx(12), fontWeight = FontWeight.Bold)
+                        Text(raw = true, text = top.player.name, color = Tok.TextHi, fontSize = spx(25), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(raw = true, text = listOf(top.teamAbbr, top.player.pos).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(13))
+                        Text(raw = true, text = top.goals.toString() + " B · " + top.assists + " A · " + top.points + " PTS", color = Accent2, fontSize = spx(16), fontWeight = FontWeight.ExtraBold)
+                        if (det.summary.isNotBlank()) Text(raw = true, text = det.summary, color = Tok.TextMid, fontSize = spx(13), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (facts.isNotBlank()) Text(raw = true, text = facts, color = Muted, fontSize = spx(12), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (det.stars.isNotEmpty()) {
+                    Text(raw = true, text = "★ " + det.stars.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("  ·  "),
+                        color = Tok.TextHi, fontSize = spx(14), modifier = Modifier.padding(top = dpx(8)))
+                } else if (scorers.size > 1) {
+                    Text(raw = true, text = scorers.drop(1).take(2).mapIndexed { i, s -> "★ ${i + 2}. ${s.player.name} (${s.teamAbbr}) · ${s.points} PTS" }.joinToString("    "),
+                        color = Tok.TextMid, fontSize = spx(13), modifier = Modifier.padding(top = dpx(8)))
+                }
+            }
+        }
+    } else {
+        // Compact info strip: report sentence plus the facts (venue, crowd, weather, TV) on one line — the detail sections follow below
+        item(key = "panels") {
+            HubPanel(Modifier.fillMaxWidth()) {
+                Text("Spielbericht", color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                val text = det?.summary?.takeIf { it.isNotBlank() } ?: SportMatch.sentence(g)
+                if (text.isNotBlank()) Text(raw = true, text = text, color = Tok.TextMid, fontSize = spx(14), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                if (facts.isNotBlank()) Text(raw = true, text = facts, color = Muted, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (kind == SportData.KIND_TEAM && det == null) Text(if (done) "Keine Details verfügbar." else "Lade Details …", color = Muted, fontSize = spx(13))
+            }
         }
     }
     // Score per period (quarters, periods, innings) or sets in tennis; CHL games carry them in the detail, not the Game
@@ -617,28 +706,64 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
             }
         }
     }
-    // Three stars of the game (CHL)
-    if (det?.stars?.isNotEmpty() == true) {
-        item(key = "stars") {
+    // Top scorers after the hero (he is #1): ranks 2..5, both teams combined — the full box score tables follow further down
+    if (scorers.size > 1) {
+        item(key = "tops") { HubSectionTitle("Topscorer") }
+        items(scorers.size - 1) { i ->
+            val s = scorers[i + 1]
             FRow {
-                Text("3 Sterne", color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(100)))
-                Text(raw = true, text = det.stars.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("  ·  "),
-                    color = Tok.TextHi, fontSize = spx(15), modifier = Modifier.weight(1f))
+                Text(raw = true, text = (i + 2).toString(), color = Muted, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(26)))
+                Text(raw = true, text = s.player.name, color = Tok.TextHi, fontSize = spx(14), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(raw = true, text = s.teamAbbr, color = Muted, fontSize = spx(13), modifier = Modifier.width(dpx(48)))
+                Text(raw = true, text = s.goals.toString() + " B · " + s.assists + " A", color = Tok.TextMid, fontSize = spx(13), textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
+                Text(raw = true, text = s.points.toString(), color = Accent2, fontSize = spx(15), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(40)))
             }
         }
     }
-    // Top scorers of the game, both teams combined (hockey points) — the full box score tables follow further down
-    val scorers = if (det != null && !det.soccer) topScorers(det, g) else emptyList()
-    if (scorers.isNotEmpty()) {
-        item(key = "tops") { HubSectionTitle("Topscorer") }
-        items(scorers.size) { i ->
-            val s = scorers[i]
-            FRow {
-                Text(raw = true, text = (i + 1).toString(), color = Muted, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(26)))
-                Text(raw = true, text = s.player.name, color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(raw = true, text = s.teamAbbr, color = Muted, fontSize = spx(13), modifier = Modifier.width(dpx(48)))
-                Text(raw = true, text = s.goals.toString() + " B · " + s.assists + " A", color = Tok.TextMid, fontSize = spx(14), textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
-                Text(raw = true, text = s.points.toString(), color = Accent2, fontSize = spx(16), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(40)))
+    // On the ice right now (NHL) beside the win probability — the two live panels of the mix
+    if (det != null && (det.onIceHome.isNotEmpty() || det.onIceAway.isNotEmpty() || det.winProb.size >= 2)) {
+        item(key = "mix") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
+                if (det.onIceHome.isNotEmpty() || det.onIceAway.isNotEmpty()) {
+                    HubPanel(Modifier.weight(1f)) {
+                        Text("Auf dem Eis", color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                        listOf(g.home to det.onIceHome, g.away to det.onIceAway).forEach { (t, ps) ->
+                            if (ps.isNotEmpty()) {
+                                Row(Modifier.padding(top = dpx(6)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
+                                    TeamLogo(t.logo, t.abbr, dpx(20))
+                                    Text(raw = true, text = t.abbr, color = Tok.TextHi, fontSize = spx(13), fontWeight = FontWeight.Bold)
+                                }
+                                ps.take(6).forEach { p ->
+                                    Row(Modifier.padding(top = dpx(2)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
+                                        TeamLogo(p.headshot, p.jersey, dpx(22))
+                                        Text(raw = true, text = p.name, color = Tok.TextHi, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                        if (p.pos.isNotBlank()) Text(raw = true, text = p.pos, color = Muted, fontSize = spx(12))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (det.winProb.size >= 2) {
+                    HubPanel(Modifier.weight(1f)) {
+                        Text("Siegwahrscheinlichkeit", color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                        WinProbChart(det.winProb, g.home.short, g.away.short)
+                    }
+                }
+            }
+        }
+    }
+    // Shot chart (NHL): every shot attempt on the rink, goals in gold
+    if (det != null && det.shots.isNotEmpty()) {
+        item(key = "rinkt") { HubSectionTitle("Schusskarte") }
+        item(key = "rink") {
+            HubPanel(Modifier.fillMaxWidth()) {
+                RinkChart(det.shots)
+                Row(Modifier.padding(top = dpx(6)), horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
+                    Text(raw = true, text = "● " + g.home.abbr + " " + det.shots.count { it.home }, color = Color(0xFFFF7A1A), fontSize = spx(13), fontWeight = FontWeight.Bold)
+                    Text(raw = true, text = "● " + g.away.abbr + " " + det.shots.count { !it.home }, color = Color(0xFF4F9CF9), fontSize = spx(13), fontWeight = FontWeight.Bold)
+                    Text(raw = true, text = "● " + Lang.tr("Tore") + " " + det.shots.count { it.goal }, color = Color(0xFFFFD166), fontSize = spx(13), fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -722,16 +847,6 @@ private fun PlayerLineCompact(p: SportMatch.Player, cols: List<Int>, l: SportDat
 /** Advanced stats, shown on the overview page itself: win-probability momentum, drive chart and scoring summary (only what ESPN delivers for the sport). */
 private fun androidx.compose.foundation.lazy.LazyListScope.analyseItems(det: SportMatch.Detail?, g: SportData.Game) {
     if (det == null) return
-    if (det.winProb.isNotEmpty()) {
-        item(key = "wp") {
-            HubSectionTitle("Momentum", raw = true)
-        }
-        item(key = "wpc") {
-            HubPanel(Modifier.fillMaxWidth()) {
-                WinProbChart(det.winProb, g.home.short, g.away.short)
-            }
-        }
-    }
     if (det.drives.isNotEmpty()) {
         item(key = "drt") {
             HubSectionTitle("Drives", raw = true)

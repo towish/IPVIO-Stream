@@ -146,4 +146,52 @@ class SportMatchDetailTest {
         assertTrue(d.away?.blocks?.first()?.players?.first()?.headshot?.endsWith("4432577.png") == true)
     }
 
+    @Test fun schusskarteUndAufDemEisWerdenGeparst() {
+        val phi = SportData.Team("Philadelphia Flyers", "Flyers", "PHI", null, "2", false, id = "15")
+        val edm = SportData.Team("Edmonton Oilers", "Oilers", "EDM", null, "4", true, id = "6")
+        val nhl = SportData.Game("401802617", "NHL", "Eishockey", 0L, 1, "", phi, edm)
+        val j = """
+        {
+          "boxscore": { "players": [
+            { "team": { "id": "15" }, "statistics": [
+              { "name": "skaters", "text": "Philadelphia Skaters", "labels": ["G", "A", "PTS", "+/-", "SOG", "TOI"],
+                "athletes": [
+                  { "athlete": { "id": "5149170", "displayName": "Matvei Michkov", "jersey": "39",
+                    "position": { "abbreviation": "RW" },
+                    "headshot": { "href": "https://a.espncdn.com/i/headshots/nhl/players/full/5149170.png" } },
+                    "stats": ["0", "1", "1", "+1", "5", "20:03"], "starter": true }
+                ] }
+            ] },
+            { "team": { "id": "6" }, "statistics": [
+              { "name": "skaters", "text": "Edmonton Skaters", "labels": ["G", "A", "PTS", "+/-", "SOG", "TOI"],
+                "athletes": [
+                  { "athlete": { "id": "3895074", "displayName": "Connor McDavid", "jersey": "97",
+                    "position": { "abbreviation": "C" } }, "stats": ["1", "2", "3", "+2", "6", "21:14"], "starter": true }
+                ] }
+            ] }
+          ] },
+          "plays": [
+            { "type": { "text": "Shot" }, "team": { "id": "15" }, "coordinate": { "x": -43, "y": -13 }, "text": "Michkov shot", "scoringPlay": false },
+            { "type": { "text": "Goal" }, "team": { "id": "6" }, "coordinate": { "x": 78, "y": 5 }, "text": "McDavid goal", "scoringPlay": true },
+            { "type": { "text": "Missed" }, "team": { "id": "15" }, "coordinate": { "x": -69, "y": -22 }, "text": "Missed the net", "scoringPlay": false },
+            { "type": { "text": "Hit" }, "team": { "id": "6" }, "coordinate": { "x": 98, "y": 20 }, "text": "A hit", "scoringPlay": false },
+            { "type": { "text": "Shot" }, "team": { "id": "6" }, "text": "Shot without coordinates", "scoringPlay": false }
+          ],
+          "onIce": [
+            { "teamId": "15", "entries": [ { "athleteid": "5149170" } ] },
+            { "teamId": "6", "entries": [ { "athleteid": "3895074" }, { "athleteid": "9999999" } ] }
+          ]
+        }
+        """
+        val d = SportMatch.parse(j, nhl)
+        assertEquals(3, d.shots.size)
+        assertTrue(d.shots[0].home)
+        assertFalse(d.shots[0].goal)
+        assertEquals(-43f, d.shots[0].x)
+        assertTrue(d.shots[1].goal)
+        assertFalse(d.shots[1].home)
+        assertEquals(listOf("Matvei Michkov"), d.onIceHome.map { it.name })
+        assertEquals(listOf("Connor McDavid"), d.onIceAway.map { it.name })
+    }
+
 }

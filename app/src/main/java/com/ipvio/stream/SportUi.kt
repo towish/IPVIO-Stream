@@ -41,6 +41,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -538,6 +540,48 @@ internal fun WinProbChart(probs: List<Float>, homeShort: String, awayShort: Stri
         drawPath(area, Accent2.copy(alpha = 0.15f))
         drawPath(line, Accent2, style = Stroke(width = 5f))
         drawCircle(Accent2, radius = 7f, center = Offset(x(probs.size - 1), y(probs.last())))
+    }
+}
+
+/** Shot chart on the rink (NHL): home shots orange, away shots blue, goals gold with a white ring. ESPN coordinates: x -100..100, y -42.5..42.5. */
+@Composable
+internal fun RinkChart(shots: List<SportMatch.Shot>) {
+    val homeC = Color(0xFFFF7A1A)
+    val awayC = Color(0xFF4F9CF9)
+    val gold = Color(0xFFFFD166)
+    Canvas(Modifier.fillMaxWidth().aspectRatio(200f / 85f)) {
+        val w = size.width
+        val h = size.height
+        val cr = CornerRadius(h * 0.16f, h * 0.16f)
+        drawRoundRect(Color(0xFF0B1526), cornerRadius = cr)
+        drawRoundRect(Color(0xFF33507E), cornerRadius = cr, style = Stroke(width = 2f))
+        // Lines: centre (red), blue lines at 75 ft from each goal line
+        drawLine(DS.Danger.copy(alpha = 0.75f), Offset(w / 2f, 0f), Offset(w / 2f, h), strokeWidth = 2.5f)
+        drawLine(awayC.copy(alpha = 0.55f), Offset(w * 0.375f, 0f), Offset(w * 0.375f, h), strokeWidth = 4f)
+        drawLine(awayC.copy(alpha = 0.55f), Offset(w * 0.625f, 0f), Offset(w * 0.625f, h), strokeWidth = 4f)
+        // Faceoff circles and centre circle
+        val fr = w * 15f / 200f
+        for ((fx, fy) in listOf(0.155f to 0.26f, 0.155f to 0.74f, 0.845f to 0.26f, 0.845f to 0.74f, 0.5f to 0.5f)) {
+            drawCircle(DS.Danger.copy(alpha = if (fx == 0.5f) 0f else 0.5f), radius = fr, center = Offset(w * fx, h * fy), style = Stroke(width = 1.5f))
+        }
+        drawCircle(awayC.copy(alpha = 0.7f), radius = fr, center = Offset(w / 2f, h / 2f), style = Stroke(width = 1.5f))
+        // Creases
+        drawRoundRect(awayC.copy(alpha = 0.30f), topLeft = Offset(w * 0.02f, h * 0.40f), size = androidx.compose.ui.geometry.Size(w * 0.035f, h * 0.20f), cornerRadius = CornerRadius(4f, 4f))
+        drawRoundRect(awayC.copy(alpha = 0.30f), topLeft = Offset(w * 0.945f, h * 0.40f), size = androidx.compose.ui.geometry.Size(w * 0.035f, h * 0.20f), cornerRadius = CornerRadius(4f, 4f))
+        // Shots: plain attempts first, goals on top
+        for (s in shots) {
+            if (s.goal) continue
+            val cx = (s.x + 100f) / 200f * w
+            val cy = (42.5f - s.y) / 85f * h
+            drawCircle((if (s.home) homeC else awayC).copy(alpha = 0.85f), radius = 5f, center = Offset(cx, cy))
+        }
+        for (s in shots) {
+            if (!s.goal) continue
+            val cx = (s.x + 100f) / 200f * w
+            val cy = (42.5f - s.y) / 85f * h
+            drawCircle(Color.White, radius = 9.5f, center = Offset(cx, cy))
+            drawCircle(gold, radius = 7f, center = Offset(cx, cy))
+        }
     }
 }
 

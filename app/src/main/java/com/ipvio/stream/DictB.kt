@@ -76,6 +76,11 @@ Topscorer¦Top scorers¦¦¦¦¦¦Meilleurs pointeurs¦
 Boxscore¦Box score¦¦¦¦¦¦Box score¦
 Spielabschnitte¦Periods¦¦¦¦¦¦Par période¦
 Highlights¦Highlights¦¦¦¦¦¦Faits saillants¦
+Spieler des Spiels¦Player of the game¦¦¦¦¦¦Joueur du match¦
+Auf dem Eis¦On the ice¦¦¦¦¦¦Sur la glace¦
+Siegwahrscheinlichkeit¦Win probability¦¦¦¦¦¦Probabilité de victoire¦
+Schusskarte¦Shot chart¦¦¦¦¦¦Carte des tirs¦
+Torhüterduell¦Goalie duel¦¦¦¦¦¦Duel de gardiens¦
 Neu im Streaming¦New on streaming¦¦¦¦¦¦Nouveautés streaming¦
 Neue Filme und Serien auf Netflix, Prime Video, Crave und Disney+¦New movies and series on Netflix, Prime Video, Crave and Disney+¦¦¦¦¦¦Nouveaux films et séries sur Netflix, Prime Video, Crave et Disney+¦
 Neu auf {0}¦New on {0}¦¦¦¦¦¦Nouveau sur {0}¦
