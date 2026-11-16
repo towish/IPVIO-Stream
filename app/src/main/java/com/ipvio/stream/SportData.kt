@@ -61,6 +61,7 @@ object SportData {
 
     val SPORTS = listOf(
         Sport("soccer", "Fußball"), Sport("basketball", "Basketball"), Sport("nfl", "NFL"), Sport("nhl", "NHL"),
+        Sport("chl", "CHL"),
         Sport("tennis", "Tennis"), Sport("f1", "Formel 1"), Sport("mlb", "MLB"), Sport("ufc", "UFC"),
         Sport("cricket", "Cricket"), Sport("golf", "Golf")
     )
@@ -84,9 +85,9 @@ object SportData {
         // CHL: Canadian junior hockey — the official HockeyTech feed (chl.ca), not ESPN.
         // Path "chl:<code>": the feed's client_code (lhjmq = QMJHL, ohl, whl). Scoreboard via the modulekit
         // scorebar; the match detail (stats, box score) via the "gc" gamesummary feed (see SportMatch.parseChl).
-        League("LHJMQ", "chl:lhjmq", "Eishockey", "nhl"),
-        League("OHL", "chl:ohl", "Eishockey", "nhl"),
-        League("WHL", "chl:whl", "Eishockey", "nhl"),
+        League("LHJMQ", "chl:lhjmq", "Eishockey", "chl"),
+        League("OHL", "chl:ohl", "Eishockey", "chl"),
+        League("WHL", "chl:whl", "Eishockey", "chl"),
         League("MLB", "baseball/mlb", "Baseball", "mlb"),
         League("ATP", "tennis/atp", "Tennis", "tennis", KIND_TENNIS),
         League("WTA", "tennis/wta", "Tennis", "tennis", KIND_TENNIS),

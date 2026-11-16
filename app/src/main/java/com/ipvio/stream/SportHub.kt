@@ -269,6 +269,33 @@ private fun buildOverview(raw: List<SportData.Game>, hub: HubCtx): HubOverviewMo
     return HubOverviewModel(games, liveMine, upcoming, finals, tops, hasCh.filterValues { it }.keys, popular, newsLeagues, counts)
 }
 
+/** One sport group of an overview section: header + card row. CHL games are split per league
+ *  (LHJMQ / OHL / WHL) with their own league header — they must not hide inside a generic group. */
+@Composable
+private fun OverviewSportGroup(sport: SportData.Sport, list: List<SportData.Game>, withCh: Set<String>, badge: Boolean, hub: HubCtx) {
+    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+        SportGroupHeader(sport, list.count { it.state == 1 }, list.size)
+        if (sport.key == "chl") {
+            for (l in SportData.LEAGUES.filter { it.sport == "chl" }) {
+                val sub = list.filter { it.league == l.name }
+                if (sub.isEmpty()) continue
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(l.name, color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(dpx(8)))
+                    Text(sub.size.toString(), color = Muted, fontSize = spx(13))
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
+                    items(sub.take(30), key = { it.key }) { g -> MatchCard(g, badge && g.key in withCh) { hub.open(g) } }
+                }
+            }
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
+                items(list.take(30), key = { it.key }) { g -> MatchCard(g, badge && g.key in withCh) { hub.open(g) } }
+            }
+        }
+    }
+}
+
 @Composable
 private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit) {
     val ctx = LocalContext.current
@@ -301,40 +328,19 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
         if (liveMine.isNotEmpty()) item(key = "live") {
             HubSectionTitle("Jetzt live", action = "Alle zeigen") { hub.goTab(1, null) }
             Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
-                for ((sport, list) in groupBySport(liveMine)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
-                        SportGroupHeader(sport, list.count { it.state == 1 }, list.size)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
-                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, g.key in m.withCh) { hub.open(g) } }
-                        }
-                    }
-                }
+                for ((sport, list) in groupBySport(liveMine)) OverviewSportGroup(sport, list, m.withCh, true, hub)
             }
         }
         if (finals.isNotEmpty()) item(key = "fin") {
             HubSectionTitle("Ergebnisse von heute")
             Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
-                for ((sport, list) in groupBySport(finals)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
-                        SportGroupHeader(sport, 0, list.size)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
-                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, false) { hub.open(g) } }
-                        }
-                    }
-                }
+                for ((sport, list) in groupBySport(finals)) OverviewSportGroup(sport, list, m.withCh, false, hub)
             }
         }
         if (upcoming.isNotEmpty()) item(key = "up") {
             HubSectionTitle("Demnächst", action = "Spielplan") { hub.goTab(2, null) }
             Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
-                for ((sport, list) in groupBySport(upcoming)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
-                        SportGroupHeader(sport, 0, list.size)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
-                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, g.key in m.withCh) { hub.open(g) } }
-                        }
-                    }
-                }
+                for ((sport, list) in groupBySport(upcoming)) OverviewSportGroup(sport, list, m.withCh, true, hub)
             }
         }
         if (popular.isNotEmpty()) item(key = "leagues") {
@@ -392,11 +398,11 @@ private fun FeaturedPanel(g: SportData.Game, hub: HubCtx) {
 private fun sportMatch(g: SportData.Game, sport: String?) = sport == null || SportData.sportOf(g) == sport
 
 /** Games grouped by competition: header with logo, LIVE marker and count, then one row per game. */
-private fun LazyListScope.groupedGames(games: List<SportData.Game>, hub: HubCtx, timeFirst: Boolean) {
+private fun LazyListScope.groupedGames(games: List<SportData.Game>, hub: HubCtx, timeFirst: Boolean, prefix: String = "") {
     games.groupBy { it.groupName }.forEach { (name, list) ->
         val l = SportData.leagueOf(list.first())
-        item(key = "h$name") { CompetitionHeader(name, l?.let { SportData.leagueLogos[it.path] }, list.count { it.state == 1 }, list.size) }
-        items(list, key = { "g" + it.key }) { g -> MatchRow(g, hub.chans(g).isNotEmpty(), timeFirst) { hub.open(g) } }
+        item(key = prefix + "h$name") { CompetitionHeader(name, l?.let { SportData.leagueLogos[it.path] }, list.count { it.state == 1 }, list.size) }
+        items(list, key = { prefix + "g" + it.key }) { g -> MatchRow(g, hub.chans(g).isNotEmpty(), timeFirst) { hub.open(g) } }
     }
 }
 
@@ -437,6 +443,13 @@ private fun HubLive(feed: SportFeed.State, hub: HubCtx, sport: String?, sportReq
                     }
                 }
                 else -> groupedGames(shown, hub, false)
+            }
+            // Today's finished games stay visible here too — a game must not vanish the moment it ends
+            val finalsToday = games.filter { it.state == 2 && sportMatch(it, sport) }
+                .sortedWith(compareBy({ popularity(it) }, { it.groupName }, { it.start }))
+            if (finalsToday.isNotEmpty()) {
+                item(key = "finh") { Column { Spacer(Modifier.height(dpx(10))); HubSectionTitle("Ergebnisse von heute") } }
+                groupedGames(finalsToday, hub, false, prefix = "f")
             }
         }
     }

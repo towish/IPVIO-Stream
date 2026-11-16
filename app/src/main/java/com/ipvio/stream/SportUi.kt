@@ -290,6 +290,7 @@ internal fun sportEmoji(key: String): String = when (key) {
     "basketball" -> "🏀"
     "nfl" -> "🏈"
     "nhl" -> "🏒"
+    "chl" -> "🏒"
     "tennis" -> "🎾"
     "f1" -> "🏎️"
     "mlb" -> "⚾"

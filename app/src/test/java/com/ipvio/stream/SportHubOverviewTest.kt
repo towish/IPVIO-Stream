@@ -31,6 +31,21 @@ class SportHubOverviewTest {
         assertEquals(emptyList<Pair<SportData.Sport, List<SportData.Game>>>(), groupBySport(emptyList()))
     }
 
+    @Test fun chlEigeneGruppeStattNhl() {
+        val games = listOf(
+            game("nhl1", "NHL", 2),
+            game("qmjhl1", "LHJMQ", 2),
+            game("ohl1", "OHL", 2),
+            game("whl1", "WHL", 1)
+        )
+        val grouped = groupBySport(games)
+        // CHL leagues form their own group right after the NHL — never hidden inside it
+        assertEquals(listOf("nhl", "chl"), grouped.map { it.first.key })
+        assertEquals(listOf("nhl1"), grouped[0].second.map { it.id })
+        assertEquals(listOf("qmjhl1", "ohl1", "whl1"), grouped[1].second.map { it.id })
+        assertEquals("CHL", grouped[1].first.label)
+    }
+
     @Test fun zweiTopspieleUnterschiedlich() {
         val nba1 = game("nba1", "NBA", 1)
         val nba2 = game("nba2", "NBA", 1)
@@ -53,6 +68,7 @@ class SportHubOverviewTest {
         assertEquals("🏀", sportEmoji("basketball"))
         assertEquals("🏈", sportEmoji("nfl"))
         assertEquals("🏒", sportEmoji("nhl"))
+        assertEquals("🏒", sportEmoji("chl"))
         assertEquals("⚾", sportEmoji("mlb"))
         assertEquals("🎾", sportEmoji("tennis"))
         assertEquals("⚽", sportEmoji("soccer"))
