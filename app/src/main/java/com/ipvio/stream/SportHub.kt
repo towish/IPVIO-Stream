@@ -256,7 +256,9 @@ private fun buildOverview(raw: List<SportData.Game>, hub: HubCtx): HubOverviewMo
     val hasCh = HashMap<String, Boolean>()
     fun ch(g: SportData.Game): Boolean = hasCh.getOrPut(g.key) { hub.chans(g).isNotEmpty() }
     val liveG = games.filter { it.state == 1 }.sortedWith(compareBy({ if (SportHubFavs.isFavGame(it)) 0 else 1 }, { popularity(it) }))
-    val liveMine = liveG.filter { ch(it) }
+    // All live games belong in the overview (the channel badge marks the watchable ones) — a game must not vanish when it starts or ends
+    liveG.forEach { ch(it) }
+    val liveMine = liveG
     val upcoming = games.filter { it.state == 0 && statusKind(it) == 0 }.sortedBy { it.start }
     upcoming.take(30).forEach { ch(it) }
     val finals = games.filter { it.state == 2 }.sortedByDescending { it.start }
@@ -303,19 +305,6 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
                     Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
                         SportGroupHeader(sport, list.count { it.state == 1 }, list.size)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
-                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, true) { hub.open(g) } }
-                        }
-                    }
-                }
-            }
-        }
-        if (upcoming.isNotEmpty()) item(key = "up") {
-            HubSectionTitle("Demnächst", action = "Spielplan") { hub.goTab(2, null) }
-            Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
-                for ((sport, list) in groupBySport(upcoming)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
-                        SportGroupHeader(sport, 0, list.size)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
                             items(list.take(30), key = { it.key }) { g -> MatchCard(g, g.key in m.withCh) { hub.open(g) } }
                         }
                     }
@@ -330,6 +319,19 @@ private fun HubOverview(feed: SportFeed.State, hub: HubCtx, onRetry: () -> Unit)
                         SportGroupHeader(sport, 0, list.size)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
                             items(list.take(30), key = { it.key }) { g -> MatchCard(g, false) { hub.open(g) } }
+                        }
+                    }
+                }
+            }
+        }
+        if (upcoming.isNotEmpty()) item(key = "up") {
+            HubSectionTitle("Demnächst", action = "Spielplan") { hub.goTab(2, null) }
+            Column(verticalArrangement = Arrangement.spacedBy(dpx(10))) {
+                for ((sport, list) in groupBySport(upcoming)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+                        SportGroupHeader(sport, 0, list.size)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(dpx(10)), contentPadding = PaddingValues(vertical = dpx(6))) {
+                            items(list.take(30), key = { it.key }) { g -> MatchCard(g, g.key in m.withCh) { hub.open(g) } }
                         }
                     }
                 }

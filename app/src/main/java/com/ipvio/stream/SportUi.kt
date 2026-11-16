@@ -202,7 +202,7 @@ internal fun MatchStatus(g: SportData.Game, big: Boolean = false) {
 @Composable
 internal fun HubSectionTitle(text: String, raw: Boolean = false, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, color = Tok.TextHi, fontSize = spx(21), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), raw = raw)
+        Text(text, color = Tok.TextHi, fontSize = spx(19), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), raw = raw)
         if (action != null && onAction != null) FilterPill(action, false, Modifier.trackFocus(), aicon = AIcon.Right) { onAction() }
     }
 }
@@ -492,16 +492,16 @@ internal fun LazyListScope.statisticsItems(stats: List<SportMatch.Stat>) {
         val lead = if (a != null && b != null && a != b) if (a > b) 1 else -1 else 0
         FRow {
             Text(raw = true, text = s.home, color = if (lead == 1) Accent2 else if (lead == -1) Muted else Tok.TextHi,
-                fontSize = spx(17), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(110)))
+                fontSize = spx(15), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(92)))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(raw = true, text = s.label, color = Muted, fontSize = spx(15), textAlign = TextAlign.Center)
-                if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(4)).height(dpx(6)).clip(RoundedCornerShape(50))) {
+                Text(raw = true, text = s.label, color = Muted, fontSize = spx(14), textAlign = TextAlign.Center)
+                if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(3)).height(dpx(5)).clip(RoundedCornerShape(50))) {
                     Box(Modifier.weight(maxOf(a, 0.01f)).fillMaxHeight().background(Accent2))
                     Box(Modifier.weight(maxOf(b, 0.01f)).fillMaxHeight().background(DS.Overlay4))
                 }
             }
             Text(raw = true, text = s.away, color = if (lead == -1) Accent2 else if (lead == 1) Muted else Tok.TextHi,
-                fontSize = spx(17), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
+                fontSize = spx(15), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(92)))
         }
     }
 }
@@ -546,9 +546,9 @@ internal fun LazyListScope.timelineItems(events: List<SportMatch.Ev>, max: Int =
     items(list.size) { i ->
         val e = list[i]
         FRow {
-            Text(raw = true, text = e.time, color = Accent2, fontSize = spx(16), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(80)))
+            Text(raw = true, text = e.time, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(72)))
             EventMark(e.type)
-            Text(raw = true, text = e.text, color = if (e.goal) Tok.TextHi else Tok.TextMid, fontSize = spx(16),
+            Text(raw = true, text = e.text, color = if (e.goal) Tok.TextHi else Tok.TextMid, fontSize = spx(14),
                 fontWeight = if (e.goal) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
         }
     }

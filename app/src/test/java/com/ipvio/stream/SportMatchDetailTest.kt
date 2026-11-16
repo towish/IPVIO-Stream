@@ -2,11 +2,10 @@ package com.ipvio.stream
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Match Center detail: ESPN summary parsing, weather, overview stat picks and top performers. */
+/** Match Center detail: ESPN summary parsing, weather and the combined top-scorer ranking. */
 class SportMatchDetailTest {
     private val browns = SportData.Team("Cleveland Browns", "CLE", "CLE", null, "20", false, id = "5")
     private val texans = SportData.Team("Houston Texans", "HOU", "HOU", null, "24", true, id = "34")
@@ -99,14 +98,26 @@ class SportMatchDetailTest {
         assertEquals("", d.weather)
     }
 
-    @Test fun topStatsUeberspringtNullUnentschieden() {
-        val d = SportMatch.parse(json, game)
-        val top = topStats(d.stats)
-        assertEquals(8, top.size)
-        assertTrue(top.none { it.label == "4th Down Efficiency" })   // 0-0 on both sides adds nothing
-        assertEquals("1st Downs", top.first().label)
-        assertEquals("Turnovers", top.last().label)                   // 9th stat (Penalties) is cut
-        assertTrue(topStats(emptyList()).isEmpty())
+    @Test fun topScorerKombiniertBeideTeams() {
+        val labels = listOf("G", "A", "PTS", "+/-", "SOG", "PIM")
+        fun p(name: String, g: Int, a: Int) = SportMatch.Player(name, "9", "C", true, listOf("$g", "$a", "${g + a}", "0", "3", "0"))
+        val home = SportMatch.Side("", listOf(
+            SportMatch.Block("Forwards", labels, listOf(p("Home Star", 2, 1), p("Home Null", 0, 0))),
+            SportMatch.Block("Goalies", listOf("SA", "SV", "SV%", "GA", "TOI"),
+                listOf(SportMatch.Player("Home Goalie", "30", "G", true, listOf("24", "23", "0.958", "1", "60:00"))))
+        ))
+        val away = SportMatch.Side("", listOf(
+            SportMatch.Block("Forwards", labels, listOf(p("Away Star", 1, 3), p("Away Mid", 1, 1)))
+        ))
+        val det = SportMatch.Detail(emptyList(), home, away, emptyList(), emptyList(), "", "", "", "", emptyList(), emptyList(), false)
+        val top = topScorers(det, game)
+        // Both teams combined, points first; the goalie block (no PTS column) and the pointless player drop out
+        assertEquals(listOf("Away Star", "Home Star", "Away Mid"), top.map { it.player.name })
+        assertEquals("HOU", top[0].teamAbbr)
+        assertEquals(4, top[0].points)
+        assertEquals(1, top[0].goals)
+        assertEquals(3, top[0].assists)
+        assertEquals("CLE", top[1].teamAbbr)
     }
 
     @Test fun analyseWirdGeparst() {
@@ -135,18 +146,4 @@ class SportMatchDetailTest {
         assertTrue(d.away?.blocks?.first()?.players?.first()?.headshot?.endsWith("4432577.png") == true)
     }
 
-    @Test fun topPlayersSortiertNachBesterSpalte() {
-        val d = SportMatch.parse(json, game)
-        val tb = topPlayers(d.away)!!
-        assertEquals(1, tb.key)                                       // YDS: C/ATT ("18/29") is not numeric
-        assertEquals("YDS", tb.block.labels[tb.key])
-        assertEquals("C.J. Stroud", tb.players[0].name)
-        assertEquals("Davis Mills", tb.players[1].name)
-        val home = topPlayers(d.home)!!
-        assertEquals("Dillon Gabriel", home.players[0].name)
-        assertNull(topPlayers(null))
-        val emptySide = SportMatch.Side("", listOf(SportMatch.Block("", emptyList(),
-            listOf(SportMatch.Player("X", "1", "", true, emptyList())))))
-        assertNull(topPlayers(emptySide))
-    }
 }
