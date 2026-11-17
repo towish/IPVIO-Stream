@@ -80,6 +80,8 @@ object IgnoredGroups {
     fun groupKey(kind: Kind, group: String) = "g:" + kind.name + "|" + group
 
     fun isIgnored(i: Item): Boolean {
+        // Favorites are never hidden: a favorite stays visible even if its language or group is ignored
+        if (Library.isFav(i.id)) return false
         if (keys.isEmpty()) return false
         val x = idx
         if (x.groups[i.kind]?.contains(i.group) == true) return true
@@ -94,9 +96,11 @@ object IgnoredGroups {
      */
     fun filter(l: List<Item>): List<Item> {
         if (keys.isEmpty()) return l
+        val favs = Library.favs.toSet()
         val x = idx
         val groupTag = HashMap<String, String>()
         return l.filter { i ->
+            if (i.id in favs) return@filter true
             if (x.groups[i.kind]?.contains(i.group) == true) return@filter false
             val tags = x.tags[i.kind] ?: return@filter true
             val t = groupTag.getOrPut(i.group) { tagIn(i.group) ?: "" }.ifEmpty { tagIn(i.title) ?: "" }

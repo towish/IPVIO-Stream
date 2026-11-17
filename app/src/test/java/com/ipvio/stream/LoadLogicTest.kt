@@ -66,7 +66,7 @@ http://h/x
         repeat(5000) { big.append("#EXTINF:-1 group-title=\"DE | TV\",Sender $it\nhttp://h/live/$it\n") }
         var calls = 0
         try {
-            M3uParser.parseStream(StringReader(big.toString()), emptySet()) { if (++calls == 2) throw ParseStop("Speicher") }
+            M3uParser.parseStream(StringReader(big.toString()), emptySet(), check = { if (++calls == 2) throw ParseStop("Speicher") })
             throw AssertionError("hätte abbrechen müssen")
         } catch (e: ParseStop) {
             assertEquals(2, calls)
@@ -148,9 +148,10 @@ http://h/x
 
     @Test fun vorauswahlNachGeraetesprache() {
         val counts = mapOf("de" to 50, "en" to 80, "tr" to 20, "yu" to 5, "?" to 3)
-        assertEquals(setOf("de"), LoadLogic.systemPreselect(counts, "de"))
-        assertEquals(setOf("yu"), LoadLogic.systemPreselect(counts, "sr"))       // Serbian → Ex-YU
-        assertEquals(setOf("en"), LoadLogic.systemPreselect(counts, "fr"))       // not present → English
+        // Untagged titles ("?") are always preselected when present (see systemPreselect)
+        assertEquals(setOf("de", "?"), LoadLogic.systemPreselect(counts, "de"))
+        assertEquals(setOf("yu", "?"), LoadLogic.systemPreselect(counts, "sr"))       // Serbian → Ex-YU
+        assertEquals(setOf("en", "?"), LoadLogic.systemPreselect(counts, "fr"))       // not present → English
         assertEquals(emptySet<String>(), LoadLogic.systemPreselect(mapOf("tr" to 1), "fr"))
         assertEquals("he", LoadLogic.langCodeOf("iw"))
         assertEquals("nb", LoadLogic.langCodeOf("no"))

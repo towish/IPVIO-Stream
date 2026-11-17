@@ -88,8 +88,9 @@ object PlaylistCacheIO {
     /**
      * Reads the cache; null if it belongs to a different address or has an unknown version. Damaged → exception.
      * [check] is called every 2,000 entries (memory guard, abort).
+     * [keepIds] = entries that are read anyway (favorites: they stay visible even when their language is hidden).
      */
-    fun read(input: InputStream, url: String, hidden: Set<String>, check: (() -> Unit)? = null): Cached? {
+    fun read(input: InputStream, url: String, hidden: Set<String>, check: (() -> Unit)? = null, keepIds: Set<String> = emptySet()): Cached? {
         val i = DataInputStream(input)
         val h = i.head(url) ?: return null
         val n = i.count()
@@ -97,7 +98,7 @@ object PlaylistCacheIO {
         val counts = HashMap<String, Int>()
         val items = ArrayList<Item>(if (hidden.isEmpty()) n else minOf(n, 4096))
         for (k in 0 until n) {
-            i.readItem(h.version, pool, hidden, counts)?.let { items.add(it) }
+            i.readItem(h.version, pool, hidden, counts, keepIds)?.let { items.add(it) }
             if (check != null && k % 2000 == 1999) check()
         }
         items.trimToSize()
@@ -147,13 +148,13 @@ object PlaylistCacheIO {
     }
 
     /** Reads an entry; hidden languages return null (they are counted anyway). */
-    private fun DataInputStream.readItem(version: Int, pool: StringPool, hidden: Set<String>, counts: HashMap<String, Int>): Item? {
+    private fun DataInputStream.readItem(version: Int, pool: StringPool, hidden: Set<String>, counts: HashMap<String, Int>, keepIds: Set<String> = emptySet()): Item? {
         val id = str() ?: ""
         val kind = Kind.entries.getOrNull(readInt()) ?: throw IOException("Zwischenspeicher beschädigt")
         var lang: String? = if (version >= 4) pool.of(str() ?: LangTagLogic.UNKNOWN) else null
         if (lang != null) {
             counts[lang] = (counts[lang] ?: 0) + 1
-            if (LangTagLogic.hides(hidden, lang, kind)) { skipItemRest(); return null }
+            if (LangTagLogic.hides(hidden, lang, kind) && id !in keepIds) { skipItemRest(); return null }
         }
         // Older caches: titles still with "&amp;" or "|EN|" – clean up while reading (fast, mostly unchanged)
         val rawTitle = str() ?: ""
@@ -182,7 +183,7 @@ object PlaylistCacheIO {
         if (lang == null) {
             lang = pool.of(LangTagLogic.of(group, rawTitle, kind == Kind.LIVE))
             counts[lang] = (counts[lang] ?: 0) + 1
-            if (LangTagLogic.hides(hidden, lang, kind)) return null
+            if (LangTagLogic.hides(hidden, lang, kind) && id !in keepIds) return null
         }
         return Item(
             id = id, kind = kind, title = title, year = if (y < 0) null else y, url = url, logo = logo,

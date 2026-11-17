@@ -88,8 +88,10 @@ fun DetailScreen(
 ) {
     val ctx = LocalContext.current
     var tryNo by remember(item.id) { mutableIntStateOf(0) }
+    // New-release titles are not in the playlist: info only, no dead Play button and no library buttons
+    val infoOnly = NewReleases.isNewRelease(item)
     // Cinema preview without buttons (info only) does not need the episodes
-    val need = LazySeries.isStub(item) && showActions
+    val need = LazySeries.isStub(item) && showActions && !infoOnly
     var full by remember(item.id) { mutableStateOf(LazySeries.full(item).takeIf { it !== item }) }
     var failed by remember(item.id) { mutableStateOf(false) }
     if (need && full == null) {
@@ -123,7 +125,7 @@ fun DetailScreen(
     }
     DetailScreenFull(
         if (need) full ?: item else item, all, onPlay, onPerson, onOpenItem, onBack,
-        embedded, autoFocus, onTopUp, showActions
+        embedded, autoFocus, onTopUp, showActions && !infoOnly
     )
 }
 
@@ -560,6 +562,20 @@ private fun DetailScreenFull(
                                 }
                                 if (item.id in History.ids) {
                                     HeroButton("Aus „Zuletzt geschaut“ entfernen", AIcon.Close, false, Modifier, bh) { History.remove(ctx, item.id) }
+                                }
+                            }
+                        }
+                        // New releases: open the title directly in its streaming app (the title is not in the playlist)
+                        if (NewReleases.isNewRelease(item)) {
+                            val svc = StreamLaunch.serviceFor(item)
+                            if (svc != null) {
+                                Spacer(Modifier.height(4.dp))
+                                Row(Modifier.offset(x = (-8).dp).padding(horizontal = 8.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
+                                    HeroButton(Lang.tr("Auf {0} ansehen").replace("{0}", svc.name), AIcon.Play, true,
+                                        Modifier.focusRequester(playFocus), 44) {
+                                        scope.launch { StreamLaunch.open(ctx, item) }
+                                    }
                                 }
                             }
                         }

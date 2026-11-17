@@ -210,7 +210,7 @@ private fun topRated(list: List<Item>): List<Item> =
 @Composable
 fun HomeScreen(
     tab: Int, onTab: (Int) -> Unit, states: List<LazyListState>,
-    onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit,
+    onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit, onPlayDirect: (Item) -> Unit,
     onResume: (Entry, Item) -> Unit, onBrowse: (BrowseReq) -> Unit,
     onCategories: (CatReq) -> Unit, onAdd: () -> Unit
 ) {
@@ -296,6 +296,11 @@ fun HomeScreen(
             homeSafe(LibMatch.matches(PlaylistStore.channels, c.similar, 40).filter { it.id != src.id && it.id !in seen && it.kind != Kind.LIVE }, noAdult)
         }
         if (l.size >= 4) value = src to l.take(20)
+    }
+
+    // New releases on the streaming services (TMDB discover): one rail per service, fetched once per home open
+    val newRel by produceState<Map<String, List<Item>>>(emptyMap(), Unit) {
+        if (MetaRepo.enabled()) value = NewReleases.fetchAll()
     }
 
     // Check new episodes of favorite series (bell)
@@ -602,7 +607,7 @@ fun HomeScreen(
                     }
                 }
                 tab == 3 -> LiveTab(live, liveP, favLive, onOpen, onPlayNow)
-                tab == MenuLogic.SPORT -> SportHub(live) { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }
+                tab == MenuLogic.SPORT -> SportHub(live, onPlay = { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }, onPlayDirect = onPlayDirect)
                 // The selected row stays in the lower half (PivotSpec); rows above are hidden so that at the top
                 // title and info of the selected title are free (billboard)
                 else -> CompositionLocalProvider(
@@ -643,6 +648,22 @@ fun HomeScreen(
                                 if (!HomeLayout.shown(blockId)) continue
                                 when (blockId) {
                                     "tiles" -> { item(key = "tiles") { QuickTiles(tiles) } }
+                                    // New releases on the streaming services: one rail per service (TMDB discover, region CA)
+                                    "newrel" -> {
+                                        if (MetaRepo.enabled()) {
+                                            NewReleases.PROVIDERS.forEach { p ->
+                                                val items = newRel[p.id].orEmpty()
+                                                if (items.isNotEmpty()) item(key = "nr${p.id}") {
+                                                    val title = Lang.tr("Neu auf {0}").replace("{0}", p.name)
+                                                    ItemsRow(title, items, cardW, onOpen) { onBrowse(BrowseReq(title, items, SORT_NEW)) }
+                                                }
+                                            }
+                                        } else item(key = "nrkey") {
+                                            Text(Lang.tr("Für Neuheiten: TMDB-Schlüssel in den Einstellungen eintragen"),
+                                                color = Muted, fontSize = spx(15), raw = true,
+                                                modifier = Modifier.padding(start = RowPadX + dpx(2), top = dpx(18)))
+                                        }
+                                    }
                                     "clock" -> { item(key = "clock") { ClockWidget() } }
                                     // Continue watching directly under the tiles: whoever watches a lot wants to continue in few clicks
                                     "resume" -> { if (resumeList.isNotEmpty()) item(key = "resume") { ResumeRow(resumeList, cardW, onResume) } }

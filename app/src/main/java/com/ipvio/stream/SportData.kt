@@ -14,8 +14,10 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Results for the sports area. Source: the public but unofficial ESPN addresses (site.api.espn.com).
- * No key needed. The addresses can change without notice: on an error the sports area keeps the last
+ * Results for the sports area. Sources: the public but unofficial ESPN addresses (site.api.espn.com),
+ * plus the CHL's official HockeyTech feed (lscluster.hockeytech.com, the same feed chl.ca uses).
+ * No key needed for ESPN; the CHL feed uses the public site key embedded in chl.ca's pages.
+ * The addresses can change without notice: on an error the sports area keeps the last
  * data or shows an error state. Fetched only while the sports area is open (and by the score alerts).
  */
 object SportData {
@@ -59,6 +61,7 @@ object SportData {
 
     val SPORTS = listOf(
         Sport("soccer", "Fußball"), Sport("basketball", "Basketball"), Sport("nfl", "NFL"), Sport("nhl", "NHL"),
+        Sport("chl", "CHL"),
         Sport("tennis", "Tennis"), Sport("f1", "Formel 1"), Sport("mlb", "MLB"), Sport("ufc", "UFC"),
         Sport("cricket", "Cricket"), Sport("golf", "Golf")
     )
@@ -79,6 +82,12 @@ object SportData {
         League("NFL", "football/nfl", "American Football", "nfl"),
         League("College Football", "football/college-football", "American Football", "nfl"),
         League("NHL", "hockey/nhl", "Eishockey", "nhl"),
+        // CHL: Canadian junior hockey — the official HockeyTech feed (chl.ca), not ESPN.
+        // Path "chl:<code>": the feed's client_code (lhjmq = QMJHL, ohl, whl). Scoreboard via the modulekit
+        // scorebar; the match detail (stats, box score) via the "gc" gamesummary feed (see SportMatch.parseChl).
+        League("LHJMQ", "chl:lhjmq", "Eishockey", "chl"),
+        League("OHL", "chl:ohl", "Eishockey", "chl"),
+        League("WHL", "chl:whl", "Eishockey", "chl"),
         League("MLB", "baseball/mlb", "Baseball", "mlb"),
         League("ATP", "tennis/atp", "Tennis", "tennis", KIND_TENNIS),
         League("WTA", "tennis/wta", "Tennis", "tennis", KIND_TENNIS),
@@ -89,7 +98,7 @@ object SportData {
     )
 
     /** Popular competitions for the overview (shown if active). */
-    val POPULAR = listOf("Premier League", "Champions League", "Bundesliga", "LaLiga", "NBA", "NFL", "NHL", "MLB")
+    val POPULAR = listOf("Premier League", "Champions League", "Bundesliga", "LaLiga", "NBA", "NFL", "NHL", "LHJMQ", "MLB")
 
     fun league(name: String): League? = LEAGUES.firstOrNull { it.name == name }
     fun leagueOf(g: Game): League? = league(g.league)
@@ -130,6 +139,88 @@ object SportData {
             } catch (_: Exception) { }
         }
         return 0L
+    }
+
+    // ───────── CHL (HockeyTech feed, chl.ca) ─────────
+
+    /** A league whose path is "chl:<code>" reads the official CHL feed instead of ESPN. */
+    fun isChl(l: League): Boolean = l.path.startsWith("chl:")
+
+    /** Public site key of chl.ca (FanReach plugin, same for LHJMQ/OHL/WHL — visible in the page source). */
+    private const val CHL_KEY = "f1aa699db3d81487"
+
+    /**
+     * Game-center feed (full box score) per CHL league: the QMJHL uses the older cluster with its own key,
+     * OHL/WHL the new cluster with the site key. Same source as the R package fastRhockey (feed "gc", tab "gamesummary").
+     * Returns (base URL, key, site_id).
+     */
+    fun chlGc(l: League): Triple<String, String, Int> = when (l.path.removePrefix("chl:")) {
+        "lhjmq" -> Triple("https://cluster.leaguestat.com/feed/index.php", "f322673b6bcae299", 0)
+        "ohl" -> Triple("https://lscluster.hockeytech.com/feed/index.php", CHL_KEY, 1)
+        else -> Triple("https://lscluster.hockeytech.com/feed/index.php", CHL_KEY, 0)
+    }
+
+    /** The scorebar window covers the schedule date bar (-7 .. +14 days). */
+    private const val CHL_DAYS_BACK = 7
+    private const val CHL_DAYS_AHEAD = 14
+
+    /** Start time with a numeric offset, e.g. "2026-11-13T19:00:00-04:00" (epoch seconds, 0 = unknown). */
+    fun parseIso(s: String): Long {
+        if (s.isBlank()) return 0L
+        for (f in listOf("yyyy-MM-dd'T'HH:mm:ssXXX", "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")) {
+            try {
+                val d = SimpleDateFormat(f, Locale.US)
+                return (d.parse(s)?.time ?: continue) / 1000
+            } catch (_: Exception) { }
+        }
+        return parseDate(s)
+    }
+
+    /** GameStatus of the HockeyTech feed: 1 = scheduled, 2 = live, 4 = final. */
+    private fun chlState(s: String): Int = when (s) { "2" -> 1; "4" -> 2; else -> 0 }
+
+    private fun chlTeam(o: JSONObject, home: Boolean, state: Int, homeGoals: Int, awayGoals: Int): Team? {
+        val p = if (home) "Home" else "Visitor"
+        val city = o.optString(p + "City").trim()
+        val nick = o.optString(p + "Nickname").trim()
+        val name = "$city $nick".trim()
+        if (name.isBlank()) return null
+        val goals = o.optString(p + "Goals").toIntOrNull()
+        val w = o.optString(p + "Wins").toIntOrNull()
+        val l = o.optString(p + "RegulationLosses").toIntOrNull()
+        val ot = (o.optString(p + "OTLosses").toIntOrNull() ?: 0) + (o.optString(p + "ShootoutLosses").toIntOrNull() ?: 0)
+        val rec = if (w != null && l != null) "$w-$l-$ot" else null
+        val winner = state == 2 && goals != null && (if (home) goals > awayGoals else goals > homeGoals)
+        return Team(name, nick.ifBlank { name }, o.optString(p + "Code").trim(),
+            o.optString(p + "Logo").takeIf { it.isNotBlank() },
+            if (state == 0) null else goals?.toString(), winner, rec, null, o.optString(p + "ID"))
+    }
+
+    /** Reads the HockeyTech scorebar (SiteKit.Scorebar). Unknown or incomplete entries are skipped. */
+    private fun parseChl(o: JSONObject, l: League): List<Game> {
+        val out = ArrayList<Game>()
+        val games = o.optJSONObject("SiteKit")?.optJSONArray("Scorebar") ?: return out
+        for (i in 0 until games.length()) {
+            try {
+                val g = games.optJSONObject(i) ?: continue
+                val state = chlState(g.optString("GameStatus"))
+                val homeGoals = g.optString("HomeGoals").toIntOrNull() ?: -1
+                val awayGoals = g.optString("VisitorGoals").toIntOrNull() ?: -1
+                val home = chlTeam(g, true, state, homeGoals, awayGoals) ?: continue
+                val away = chlTeam(g, false, state, homeGoals, awayGoals) ?: continue
+                val detail = g.optString("GameStatusString").trim()
+                val venue = listOf(g.optString("venue_name").trim(), g.optString("venue_location").trim())
+                    .filter { it.isNotBlank() }.joinToString(", ")
+                out.add(Game(
+                    g.optString("ID", "$i"), l.name, l.catName, parseIso(g.optString("GameDateISO8601")), state, detail, home, away,
+                    statusName = when (state) { 1 -> "STATUS_IN_PROGRESS"; 2 -> "STATUS_FINAL"; else -> "STATUS_SCHEDULED" },
+                    clock = if (state == 1) g.optString("GameClock").trim() else "",
+                    period = g.optString("Period").toIntOrNull() ?: 0,
+                    venue = venue
+                ))
+            } catch (_: Exception) { }
+        }
+        return out
     }
 
     private fun stateOf(type: JSONObject?): Int = when (type?.optString("state")) { "in" -> 1; "post" -> 2; else -> 0 }
@@ -176,6 +267,7 @@ object SportData {
     /** Reads the response of a scoreboard. Unknown or incomplete entries are skipped. */
     fun parse(json: String, l: League): List<Game> {
         val o = JSONObject(json)
+        if (isChl(l)) return parseChl(o, l)
         rememberLogo(o, l)
         return when (l.kind) {
             KIND_TENNIS -> parseTennis(o, l)
@@ -372,9 +464,11 @@ object SportData {
         return out
     }
 
-    private fun urlFor(l: League, ymd: String?): String = when (l.kind) {
-        KIND_CRICKET -> "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=cricket"
-        KIND_TEAM -> "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$ymd"
+    private fun urlFor(l: League, ymd: String?): String = when {
+        // CHL: one window fetch for the whole date bar, filtered by day afterwards (like the event sports)
+        isChl(l) -> "https://lscluster.hockeytech.com/feed/?feed=modulekit&key=$CHL_KEY&view=scorebar&client_code=${l.path.removePrefix("chl:")}&numberofdaysahead=$CHL_DAYS_AHEAD&numberofdaysback=$CHL_DAYS_BACK&fmt=json"
+        l.kind == KIND_CRICKET -> "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=cricket"
+        l.kind == KIND_TEAM -> "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard?dates=$ymd"
         // Tennis, F1, UFC, golf: the scoreboard shows the current events; days are filtered afterwards
         else -> "https://site.api.espn.com/apis/site/v2/sports/${l.path}/scoreboard"
     }
@@ -391,7 +485,7 @@ object SportData {
      * Event sports (tennis, F1, UFC, golf, cricket) have no day parameter: their current events are filtered by day.
      */
     suspend fun fetch(l: League, ymd: String, maxAgeMs: Long = 40_000): List<Game> = withContext(Dispatchers.IO) {
-        val dayParam = l.kind == KIND_TEAM
+        val dayParam = l.kind == KIND_TEAM && !isChl(l)
         val key = l.path + "|" + (if (dayParam) ymd else "now")
         val all = load(l, key, if (dayParam) ymd else null, maxAgeMs)
         if (dayParam) all else all.filter { onDay(it, ymd, General.zone()) }
@@ -399,7 +493,7 @@ object SportData {
 
     /** Last loaded games of [l] for [ymd] regardless of their age (null = never loaded): shown at once while fresh data loads. */
     fun peek(l: League, ymd: String): List<Game>? {
-        val dayParam = l.kind == KIND_TEAM
+        val dayParam = l.kind == KIND_TEAM && !isChl(l)
         val key = l.path + "|" + (if (dayParam) ymd else "now")
         val all = synchronized(cache) { cache[key] }?.second ?: return null
         return if (dayParam) all else all.filter { onDay(it, ymd, General.zone()) }
@@ -433,7 +527,7 @@ object SportData {
     }
 
     /** Was there ever an answer for this league and day? (Distinguishes "no games" from "not reachable".) */
-    fun hasData(l: League, ymd: String): Boolean = synchronized(cache) { cache.containsKey(l.path + "|" + (if (l.kind == KIND_TEAM) ymd else "now")) }
+    fun hasData(l: League, ymd: String): Boolean = synchronized(cache) { cache.containsKey(l.path + "|" + (if (l.kind == KIND_TEAM && !isChl(l)) ymd else "now")) }
 
     // ───────── Matching to your channels ─────────
 

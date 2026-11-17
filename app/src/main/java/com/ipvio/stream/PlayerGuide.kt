@@ -62,12 +62,14 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.lerp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Shortly after closing a selection window in the guide (Back) do not perform another back step. */
 object GuideBack {
@@ -76,12 +78,14 @@ object GuideBack {
     var handler: (() -> Unit)? = null
 }
 
-/** Remembers the view of the TV guide (zoom, row height, past shows). */
+/** Remembers the view of the TV guide (zoom, row height, past shows, guide-only channels). */
 object GuidePrefs {
     // Default (round 14, user's wish): zoom "Large", row height "Compact"
     var zoom by mutableIntStateOf(2)
     var rowSize by mutableIntStateOf(0)
     var hidePast by mutableStateOf(false)
+    /** Only channels with known program data (loaded XMLTV or EPG already fetched once). */
+    var onlyWithGuide by mutableStateOf(false)
     private var inited = false
 
     fun init(c: Context) {
@@ -93,11 +97,12 @@ object GuidePrefs {
         zoom = p.getInt("zoom", 2).coerceIn(0, 2)
         rowSize = p.getInt("row", 0).coerceIn(0, 2)
         hidePast = p.getBoolean("past", false)
+        onlyWithGuide = p.getBoolean("onlyGuide", false)
     }
 
     fun save(c: Context) {
         Profiles.sp(c, "ipvio_guide").edit()
-            .putInt("zoom", zoom).putInt("row", rowSize).putBoolean("past", hidePast).apply()
+            .putInt("zoom", zoom).putInt("row", rowSize).putBoolean("past", hidePast).putBoolean("onlyGuide", onlyWithGuide).apply()
     }
 }
 
@@ -113,6 +118,13 @@ fun Guide(
 ) {
     val ctx = LocalContext.current
     GuidePrefs.init(ctx)
+    GuideCollections.init(ctx)
+    // Keyword matching folds every channel title: build that cache off the main thread.
+    // The guide opens at once (without collections); they appear when the scan finishes.
+    LaunchedEffect(all) {
+        withContext(Dispatchers.Default) { GuideCollectionLogic.buildCache(all) }
+        GuideCollections.touch()
+    }
     val openedAt = remember { System.currentTimeMillis() / 1000 }
     val base = (openedAt - 1800) - ((openedAt - 1800) % 1800)
     // Channels with archive (catchup): this many days can be scrolled back
@@ -138,8 +150,11 @@ fun Guide(
     var rowReq by remember { mutableStateOf<FocusRequester?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
-    // Categories on the left (as in the design): current list, all channels, favorites, own lists, provider groups
-    val cats = remember(list, all, Library.favs.size, ChannelLists.lists.size) { guideCategories(list, all) }
+    var showCollections by remember { mutableStateOf(false) }
+    // Categories on the left (as in the design): current list, all channels, favorites, own lists, collections, provider groups
+    // Memoized: building the categories scans the whole channel list (collections match by keyword),
+    // so it only runs again when the list, the collections, the guide-only switch or the loaded EPG changes.
+    val cats = remember(list, all, Library.favs.size, ChannelLists.lists.size, GuideCollections.version, GuidePrefs.onlyWithGuide, Xmltv.channelCount) { guideCategories(list, all) }
     var catIdx by remember { mutableIntStateOf(0) }
     val shown = cats.getOrNull(catIdx)?.items ?: list
     val catReq = remember { FocusRequester() }
@@ -186,6 +201,7 @@ fun Guide(
     // The player intercepts the Back key and calls this step via GuideBack.handler (before, it closed the guide immediately).
     val backStep by androidx.compose.runtime.rememberUpdatedState<() -> Unit> {
         if (System.currentTimeMillis() >= GuideBack.mutedUntil) when {
+            showCollections -> showCollections = false
             inBlock -> {
                 val r = rowReq
                 if (r == null || !runCatching { r.requestFocus() }.isSuccess) { if (!runCatching { catReq.requestFocus() }.isSuccess) onClose() }
@@ -205,6 +221,7 @@ fun Guide(
         onPick = { ch -> showSearch = false; val p = onPickIn; if (p != null) p(ch, all) else onPick(ch) },
         onClose = { showSearch = false; GuideBack.mutedUntil = System.currentTimeMillis() + 400 }
     )
+    if (showCollections) CollectionEditor(onClose = { showCollections = false })
     // Top: header + selected show on the left, the running picture on the right (PlayerScreen shrinks it to 400 × 225 dp, top right).
     // Below: categories and program grid across the full width – so several hours are visible at once.
     Column(
@@ -266,6 +283,14 @@ fun Guide(
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                         Text("Vergangene Sendungen", color = Color.White, fontSize = 15.sp)
                                         SmallPill(if (GuidePrefs.hidePast) "Ausblenden" else "Abdunkeln") { GuidePrefs.hidePast = !GuidePrefs.hidePast; GuidePrefs.save(ctx) }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text("Nur Sender mit Programm", color = Color.White, fontSize = 15.sp)
+                                        SmallPill(if (GuidePrefs.onlyWithGuide) "Ein" else "Aus") { GuidePrefs.onlyWithGuide = !GuidePrefs.onlyWithGuide; GuidePrefs.save(ctx) }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text("Sammlungen", color = Color.White, fontSize = 15.sp)
+                                        SmallPill("Verwalten") { showSettings = false; showCollections = true }
                                     }
                                     Text("Zurück: Sendung, Sender, Kategorie, dann schließen", color = Muted, fontSize = 13.sp)
                                     Text("Jetzt ${hhmm(nowSec)} · Zeitzone ${epgZone().id} (änderbar unter Einstellungen > Sprache & Region)", color = Muted, fontSize = 13.sp)
@@ -370,22 +395,35 @@ private val BlockLine = Color(0xFF2A2F3B)
 /** A category on the left in the TV guide. */
 class GuideCat(val name: String, val items: List<Item>, val icon: AIcon?)
 
-/** Categories for the TV guide: current list (if different from all), all channels, favorites, own lists, groups. */
+/** Channel with known program data: loaded XMLTV, or EPG already fetched once (Xtream cache). */
+fun hasGuide(it: Item): Boolean = Xmltv.has(it.tvgId) || EpgFull.peek(it) != null
+
+/** Categories for the TV guide: current list, all channels, favorites, own lists, keyword collections, groups. */
 fun guideCategories(list: List<Item>, all: List<Item>): List<GuideCat> {
     val out = ArrayList<GuideCat>()
-    val allIds = all.size
-    if (list.size != allIds && list.isNotEmpty()) out.add(GuideCat("Aktuelle Liste", list, AIcon.Play))
-    out.add(GuideCat("Alle Sender", all, AIcon.Grid))
-    val byId = all.associateBy { it.id }
+    // "Guide only": every category shows only channels with known program data (empty rows disappear)
+    val allF = if (GuidePrefs.onlyWithGuide) all.filter(::hasGuide) else all
+    val listF = if (GuidePrefs.onlyWithGuide) list.filter(::hasGuide) else list
+    if (listF.size != allF.size && listF.isNotEmpty()) out.add(GuideCat("Aktuelle Liste", listF, AIcon.Play))
+    out.add(GuideCat("Alle Sender", allF, AIcon.Grid))
+    val byId = allF.associateBy { it.id }
     val favs = Library.favs.mapNotNull { byId[it] }
     if (favs.isNotEmpty()) out.add(GuideCat("Favoriten", favs, AIcon.Star))
     for (l in ChannelLists.lists.toList()) {
         val items = l.ids.mapNotNull { byId[it] }
         if (items.isNotEmpty()) out.add(GuideCat(l.name, items, AIcon.Lists))
     }
+    // Keyword collections (own sauce): channels matched by words in the name or the provider category.
+    // Cached folds: the first guide open shows no collections yet (cache still building),
+    // they appear once the background scan finishes (see the LaunchedEffect in Guide).
+    for (c in GuideCollections.list) {
+        val items = GuideCollectionLogic.itemsOfCached(c, allF, all)
+        if (items.isNotEmpty()) out.add(GuideCat("${c.emoji} ${c.name}".trim(), items, AIcon.Lists))
+    }
     val groups = LinkedHashMap<String, ArrayList<Item>>()
-    for (it in all) groups.getOrPut(it.group) { ArrayList() }.add(it)
-    if (groups.size > 1) for ((g, l) in groups) out.add(GuideCat(g, l, null))
+    for (it in allF) groups.getOrPut(it.group) { ArrayList() }.add(it)
+    // Canadian / Quebec groups first (e.g. "CA: Canada FR"), the rest in provider order
+    if (groups.size > 1) for (g in GuideCollectionLogic.pinnedFirst(groups.keys.toList())) out.add(GuideCat(g, groups.getValue(g), null))
     return out
 }
 
@@ -423,6 +461,105 @@ private fun GuideHint(key: String?, text: String, vararg keys: AIcon) {
             for (k in keys) AppIcon(k, Color.White, size = 14.dp)
         }
         Text(text, color = Muted, fontSize = 13.sp)
+    }
+}
+
+/**
+ * Manage the keyword collections of the guide (create / edit / delete).
+ * Same dialog pattern as NameDialog in LiveTab: full-screen scrim, centered card.
+ * Back closes the whole editor without saving (see the back step in Guide).
+ */
+@Composable
+private fun CollectionEditor(onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    GuideCollections.init(ctx)
+    var editing by remember { mutableStateOf<CollectionDef?>(null) }
+    var confirmDelete by remember { mutableStateOf<CollectionDef?>(null) }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(editing) { if (editing == null) { delay(100); runCatching { first.requestFocus() } } }
+    Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.width(680.dp).clip(RoundedCornerShape(DS.RadiusL)).background(Surf)
+                .border(1.dp, DS.Overlay3, RoundedCornerShape(DS.RadiusL)).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Sammlungen", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Eine Sammlung fasst Sender nach Stichwörtern zusammen – zum Beispiel alle Québec-Sender, egal in welcher Kategorie des Anbieters sie stehen. Ein Stichwort trifft, wenn ein Wort im Namen damit beginnt.", color = PT.T2, fontSize = 14.sp)
+            val ed = editing
+            if (ed != null) {
+                key(ed.id) {
+                    CollectionForm(ed,
+                        onSave = { def ->
+                            if (def.id == 0) GuideCollections.create(ctx, def) else GuideCollections.update(ctx, def)
+                            editing = null
+                        },
+                        onCancel = { editing = null })
+                }
+            } else {
+                if (GuideCollections.list.isEmpty()) Text("Keine Sammlungen", color = Muted, fontSize = 15.sp)
+                for (c in GuideCollections.list) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(raw = true, text = "${c.emoji} ${c.name}".trim(), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val kws = (c.nameKeywords + c.groupKeywords).joinToString(", ")
+                            if (kws.isNotEmpty()) Text(raw = true, text = kws, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        SmallPill("Bearbeiten") { editing = c }
+                        Box {
+                            SmallPill("Löschen") { confirmDelete = c }
+                            if (confirmDelete == c) OptionPopup(listOf("Löschen", "Abbrechen"), -1, { confirmDelete = null }) { i ->
+                                confirmDelete = null
+                                if (i == 0) GuideCollections.delete(ctx, c.id)
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PillButton("Neue Sammlung", Modifier.focusRequester(first), icon = AIcon.Plus) {
+                        editing = CollectionDef(0, "", "📺", emptyList(), emptyList(), 0)
+                    }
+                    PillButton("Fertig", light = true) { onClose() }
+                }
+            }
+        }
+    }
+}
+
+/** Edit one keyword collection: name, emoji, keywords for the channel name and the category, sort order. */
+@Composable
+private fun CollectionForm(def: CollectionDef, onSave: (CollectionDef) -> Unit, onCancel: () -> Unit) {
+    var name by remember { mutableStateOf(def.name) }
+    var emoji by remember { mutableStateOf(def.emoji) }
+    var nameKw by remember { mutableStateOf(def.nameKeywords.joinToString(", ")) }
+    var groupKw by remember { mutableStateOf(def.groupKeywords.joinToString(", ")) }
+    var sort by remember { mutableIntStateOf(def.sort) }
+    val nameReq = remember { FocusRequester() }
+    LaunchedEffect(Unit) { delay(100); runCatching { nameReq.requestFocus() } }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(name, { name = it.take(GuideCollectionLogic.MAX_NAME) }, "Name", inner = Modifier.focusRequester(nameReq))
+        Field(emoji, { emoji = it.take(6) }, "Emoji")
+        Field(nameKw, { nameKw = it.take(GuideCollectionLogic.MAX_KEYWORDS) }, "Stichwörter im Sendernamen")
+        Text("Stichwörter, getrennt durch Kommas", color = Muted, fontSize = 13.sp)
+        Field(groupKw, { groupKw = it.take(GuideCollectionLogic.MAX_KEYWORDS) }, "Stichwörter in der Kategorie")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            Text("Sortierung", color = Color.White, fontSize = 15.sp)
+            SmallPill(if (sort == 0) "Name" else "Nummer") { sort = (sort + 1) % 2 }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PillButton("Speichern", light = true) {
+                onSave(def.copy(
+                    name = GuideCollectionLogic.cleanName(name).ifEmpty { if (def.id == 0) "Neue Sammlung" else def.name },
+                    emoji = GuideCollectionLogic.cleanEmoji(emoji).ifEmpty { "📺" },
+                    nameKeywords = GuideCollectionLogic.cleanKeywords(nameKw),
+                    groupKeywords = GuideCollectionLogic.cleanKeywords(groupKw),
+                    sort = sort
+                ))
+            }
+            PillButton("Abbrechen") { onCancel() }
+        }
     }
 }
 
@@ -476,8 +613,18 @@ private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Mo
                 }
             }
             // The whole width belongs to the description (the "Next shows" column was dropped at the user's request)
-            if (e.desc.isNotBlank()) Text(raw = true, text = e.desc, color = DS.TextSoft, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            if (e.desc.isNotBlank()) Text(raw = true, text = e.desc, color = DS.TextSoft, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
+        }
+        // Picture of the show from the XMLTV feed, if any (lazy load: only the shown show fetches its image)
+        val icon = e?.icon
+        if (icon != null) {
+            Box(
+                Modifier.fillMaxHeight().width(220.dp).clip(RoundedCornerShape(DS.RadiusS)).background(DS.Overlay2),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(icon, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
         }
     }
 }
