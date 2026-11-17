@@ -584,7 +584,7 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                 Box(
                     Modifier.width(dpx(400)).aspectRatio(16f / 9f)
                         .onFocusChanged { vidFocus = it.isFocused }
-                        .then(if (vidFocus) Modifier.border(dpx(3), Accent2, RoundedCornerShape(12.dp)) else Modifier)
+                        .then(if (vidFocus) Modifier.border(dpx(3), Accent2, RoundedCornerShape(dpx(12))) else Modifier)
                         .clickable { hub.watch(g) }
                 ) {
                     androidx.compose.runtime.key(ch0.id) {
