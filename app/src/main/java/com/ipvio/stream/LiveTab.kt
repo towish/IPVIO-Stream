@@ -769,7 +769,7 @@ private fun ScoreBug(g: SportData.Game) {
                 TeamLogo(t.logo, t.abbr, 20.dp)
                 Text(raw = true, text = t.abbr, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Spacer(Modifier.weight(1f))
-                Text(raw = true, text = t.score, color = if (t.winner) Accent2 else Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                Text(raw = true, text = t.score ?: "", color = if (t.winner) Accent2 else Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
             }
         }
     }

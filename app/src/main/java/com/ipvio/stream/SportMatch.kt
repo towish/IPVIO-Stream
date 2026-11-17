@@ -26,6 +26,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -539,14 +541,17 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
     val det = d
     val chans = hub.chans(g)
     val first = remember { FocusRequester() }
+    var vidFocus by remember { mutableStateOf(false) }
     HubPageFrame(g.groupName, listOf(g.note, if (l != null && l.name != g.groupName) l.name else "").filter { it.isNotBlank() }.joinToString(" · "), { hub.nav.pop() }, first) {
         HubPanel(Modifier.fillMaxWidth()) {
-            MatchHeader(g, 84)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(8))) {
+            MatchHeader(g, 64)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
                 WatchLiveButton(chans) { hub.watch(g) }
                 // CHL highlights: direct MP4, played in the app's own player (only when a video exists)
                 det?.highlightUrl?.let { hl ->
-                    HeroButton(Lang.tr("Highlights"), AIcon.Play, true, Modifier.trackFocus(), 46) {
+                    HeroButton(Lang.tr("Highlights"), AIcon.Play, true, Modifier.trackFocus(), 40) {
                         hub.playDirect(
                             Item(
                                 "hl:${g.id}", Kind.MOVIE,
@@ -573,9 +578,25 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                     FilterPill(if (on) "Score-Overlay: An" else "Score-Overlay: Aus", on, Modifier.trackFocus(), aicon = AIcon.Live) { SportAlerts.togglePin(pinCtx, g) }
                 }
             }
+            // Live picture top-right, like the video window of the guide: the match plays beside its stats; OK on it opens the full player
+            if (g.state == 1 && chans.isNotEmpty()) {
+                val ch0 = chans.first()
+                Box(
+                    Modifier.width(dpx(400)).aspectRatio(16f / 9f)
+                        .onFocusChanged { vidFocus = it.isFocused }
+                        .then(if (vidFocus) Modifier.border(dpx(3), Accent2, RoundedCornerShape(12.dp)) else Modifier)
+                        .clickable { hub.watch(g) }
+                ) {
+                    androidx.compose.runtime.key(ch0.id) {
+                        SecondStream(ch0, split = false, audioOn = true, modifier = Modifier.fillMaxSize(), small = false)
+                    }
+                }
+            }
+            }
+            }
         }
         // Mega one-pager: everything on one scrolling page, up/down only — no tabs, no Enter to navigate
-        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = dpx(30)), verticalArrangement = Arrangement.spacedBy(dpx(4))) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = dpx(30)), verticalArrangement = Arrangement.spacedBy(dpx(2))) {
             overviewItems(g, det, done, kind, l, hub)
             when (kind) {
                 SportData.KIND_RACE, SportData.KIND_GOLF -> if (g.field.isNotEmpty()) {
@@ -604,18 +625,18 @@ internal fun MatchCenterPage(g0: SportData.Game, hub: HubCtx) {
                         item(key = "duel") { HubSectionTitle("Torhüterduell") }
                         item(key = "duelr") {
                             HubPanel(Modifier.fillMaxWidth()) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
-                                    TeamLogo(gh.first.headshot, gh.first.jersey, dpx(44))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
+                                    TeamLogo(gh.first.headshot, gh.first.jersey, dpx(34))
                                     Column(Modifier.weight(1f)) {
-                                        Text(raw = true, text = gh.first.name, color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(raw = true, text = gh.second, color = Muted, fontSize = spx(13))
+                                        Text(raw = true, text = gh.first.name, color = Tok.TextHi, fontSize = spx(13), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(raw = true, text = gh.second, color = Muted, fontSize = spx(11.5))
                                     }
-                                    Text(raw = true, text = "vs", color = Muted, fontSize = spx(14), fontWeight = FontWeight.Bold)
+                                    Text(raw = true, text = "vs", color = Muted, fontSize = spx(12), fontWeight = FontWeight.Bold)
                                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                                        Text(raw = true, text = ga.first.name, color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(raw = true, text = ga.second, color = Muted, fontSize = spx(13))
+                                        Text(raw = true, text = ga.first.name, color = Tok.TextHi, fontSize = spx(13), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(raw = true, text = ga.second, color = Muted, fontSize = spx(11.5))
                                     }
-                                    TeamLogo(ga.first.headshot, ga.first.jersey, dpx(44))
+                                    TeamLogo(ga.first.headshot, ga.first.jersey, dpx(34))
                                 }
                             }
                         }
@@ -652,22 +673,22 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
         item(key = "hero") {
             HubPanel(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
-                    TeamLogo(top.player.headshot, top.player.jersey, dpx(104))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(3))) {
-                        Text("Spieler des Spiels", color = Accent2, fontSize = spx(12), fontWeight = FontWeight.Bold)
-                        Text(raw = true, text = top.player.name, color = Tok.TextHi, fontSize = spx(25), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(raw = true, text = listOf(top.teamAbbr, top.player.pos).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(13))
-                        Text(raw = true, text = top.goals.toString() + " B · " + top.assists + " A · " + top.points + " PTS", color = Accent2, fontSize = spx(16), fontWeight = FontWeight.ExtraBold)
-                        if (det.summary.isNotBlank()) Text(raw = true, text = det.summary, color = Tok.TextMid, fontSize = spx(13), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (facts.isNotBlank()) Text(raw = true, text = facts, color = Muted, fontSize = spx(12), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TeamLogo(top.player.headshot, top.player.jersey, dpx(76))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(2))) {
+                        Text("Spieler des Spiels", color = Accent2, fontSize = spx(11), fontWeight = FontWeight.Bold)
+                        Text(raw = true, text = top.player.name, color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(raw = true, text = listOf(top.teamAbbr, top.player.pos).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(12))
+                        Text(raw = true, text = top.goals.toString() + " B · " + top.assists + " A · " + top.points + " PTS", color = Accent2, fontSize = spx(14), fontWeight = FontWeight.ExtraBold)
+                        if (det.summary.isNotBlank()) Text(raw = true, text = det.summary, color = Tok.TextMid, fontSize = spx(12), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (facts.isNotBlank()) Text(raw = true, text = facts, color = Muted, fontSize = spx(11), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 if (det.stars.isNotEmpty()) {
                     Text(raw = true, text = "★ " + det.stars.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("  ·  "),
-                        color = Tok.TextHi, fontSize = spx(14), modifier = Modifier.padding(top = dpx(8)))
+                        color = Tok.TextHi, fontSize = spx(12.5), modifier = Modifier.padding(top = dpx(6)))
                 } else if (scorers.size > 1) {
                     Text(raw = true, text = scorers.drop(1).take(2).mapIndexed { i, s -> "★ ${i + 2}. ${s.player.name} (${s.teamAbbr}) · ${s.points} PTS" }.joinToString("    "),
-                        color = Tok.TextMid, fontSize = spx(13), modifier = Modifier.padding(top = dpx(8)))
+                        color = Tok.TextMid, fontSize = spx(12), modifier = Modifier.padding(top = dpx(6)))
                 }
             }
         }
@@ -675,11 +696,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
         // Compact info strip: report sentence plus the facts (venue, crowd, weather, TV) on one line — the detail sections follow below
         item(key = "panels") {
             HubPanel(Modifier.fillMaxWidth()) {
-                Text("Spielbericht", color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                Text("Spielbericht", color = Tok.TextHi, fontSize = spx(13), fontWeight = FontWeight.Bold)
                 val text = det?.summary?.takeIf { it.isNotBlank() } ?: SportMatch.sentence(g)
-                if (text.isNotBlank()) Text(raw = true, text = text, color = Tok.TextMid, fontSize = spx(14), maxLines = 3, overflow = TextOverflow.Ellipsis)
-                if (facts.isNotBlank()) Text(raw = true, text = facts, color = Muted, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (kind == SportData.KIND_TEAM && det == null) Text(if (done) "Keine Details verfügbar." else "Lade Details …", color = Muted, fontSize = spx(13))
+                if (text.isNotBlank()) Text(raw = true, text = text, color = Tok.TextMid, fontSize = spx(12.5), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                if (facts.isNotBlank()) Text(raw = true, text = facts, color = Muted, fontSize = spx(12), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (kind == SportData.KIND_TEAM && det == null) Text(if (done) "Keine Details verfügbar." else "Lade Details …", color = Muted, fontSize = spx(12))
             }
         }
     }
@@ -691,17 +712,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
         val tennis = kind == SportData.KIND_TENNIS
         item(key = "lh") {
             FRow {
-                Text(if (tennis) "Sätze" else "Spielabschnitte", color = Muted, fontSize = spx(13), modifier = Modifier.weight(1f))
-                (1..n).forEach { i -> Text(raw = true, text = "$i", color = Muted, fontSize = spx(13), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(46))) }
-                Text(if (tennis) "Sätze" else "Gesamt", color = Muted, fontSize = spx(13), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(66)))
+                Text(if (tennis) "Sätze" else "Spielabschnitte", color = Muted, fontSize = spx(12), modifier = Modifier.weight(1f))
+                (1..n).forEach { i -> Text(raw = true, text = "$i", color = Muted, fontSize = spx(12), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(42))) }
+                Text(if (tennis) "Sätze" else "Gesamt", color = Muted, fontSize = spx(12), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(60)))
             }
         }
         listOf(g.home to hl, g.away to al).forEachIndexed { k, (t, ls) ->
             item(key = "l$k") {
                 FRow {
-                    TeamName(t, g.state, Modifier.weight(1f), logoSize = 22)
-                    (0 until n).forEach { i -> Text(raw = true, text = ls.getOrElse(i) { "" }, color = Tok.TextHi, fontSize = spx(15), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(46))) }
-                    Text(raw = true, text = t.score ?: "", color = Accent2, fontSize = spx(16), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, modifier = Modifier.width(dpx(66)))
+                    TeamName(t, g.state, Modifier.weight(1f), logoSize = 18)
+                    (0 until n).forEach { i -> Text(raw = true, text = ls.getOrElse(i) { "" }, color = Tok.TextHi, fontSize = spx(13.5), textAlign = TextAlign.Center, modifier = Modifier.width(dpx(42))) }
+                    Text(raw = true, text = t.score ?: "", color = Accent2, fontSize = spx(14.5), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, modifier = Modifier.width(dpx(60)))
                 }
             }
         }
@@ -712,11 +733,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
         items(scorers.size - 1) { i ->
             val s = scorers[i + 1]
             FRow {
-                Text(raw = true, text = (i + 2).toString(), color = Muted, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(26)))
-                Text(raw = true, text = s.player.name, color = Tok.TextHi, fontSize = spx(14), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(raw = true, text = s.teamAbbr, color = Muted, fontSize = spx(13), modifier = Modifier.width(dpx(48)))
-                Text(raw = true, text = s.goals.toString() + " B · " + s.assists + " A", color = Tok.TextMid, fontSize = spx(13), textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
-                Text(raw = true, text = s.points.toString(), color = Accent2, fontSize = spx(15), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(40)))
+                Text(raw = true, text = (i + 2).toString(), color = Muted, fontSize = spx(12.5), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(22)))
+                Text(raw = true, text = s.player.name, color = Tok.TextHi, fontSize = spx(12.5), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(raw = true, text = s.teamAbbr, color = Muted, fontSize = spx(12), modifier = Modifier.width(dpx(44)))
+                Text(raw = true, text = s.goals.toString() + " B · " + s.assists + " A", color = Tok.TextMid, fontSize = spx(12), textAlign = TextAlign.End, modifier = Modifier.width(dpx(96)))
+                Text(raw = true, text = s.points.toString(), color = Accent2, fontSize = spx(13.5), fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(36)))
             }
         }
     }
@@ -726,18 +747,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
                 if (det.onIceHome.isNotEmpty() || det.onIceAway.isNotEmpty()) {
                     HubPanel(Modifier.weight(1f)) {
-                        Text("Auf dem Eis", color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                        Text("Auf dem Eis", color = Accent2, fontSize = spx(13), fontWeight = FontWeight.Bold)
                         listOf(g.home to det.onIceHome, g.away to det.onIceAway).forEach { (t, ps) ->
                             if (ps.isNotEmpty()) {
-                                Row(Modifier.padding(top = dpx(6)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
-                                    TeamLogo(t.logo, t.abbr, dpx(20))
-                                    Text(raw = true, text = t.abbr, color = Tok.TextHi, fontSize = spx(13), fontWeight = FontWeight.Bold)
+                                Row(Modifier.padding(top = dpx(5)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(7))) {
+                                    TeamLogo(t.logo, t.abbr, dpx(16))
+                                    Text(raw = true, text = t.abbr, color = Tok.TextHi, fontSize = spx(12), fontWeight = FontWeight.Bold)
                                 }
                                 ps.take(6).forEach { p ->
-                                    Row(Modifier.padding(top = dpx(2)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
-                                        TeamLogo(p.headshot, p.jersey, dpx(22))
-                                        Text(raw = true, text = p.name, color = Tok.TextHi, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                        if (p.pos.isNotBlank()) Text(raw = true, text = p.pos, color = Muted, fontSize = spx(12))
+                                    Row(Modifier.padding(top = dpx(1)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(7))) {
+                                        TeamLogo(p.headshot, p.jersey, dpx(18))
+                                        Text(raw = true, text = p.name, color = Tok.TextHi, fontSize = spx(12), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                        if (p.pos.isNotBlank()) Text(raw = true, text = p.pos, color = Muted, fontSize = spx(11))
                                     }
                                 }
                             }
@@ -746,7 +767,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
                 }
                 if (det.winProb.size >= 2) {
                     HubPanel(Modifier.weight(1f)) {
-                        Text("Siegwahrscheinlichkeit", color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                        Text("Siegwahrscheinlichkeit", color = Accent2, fontSize = spx(13), fontWeight = FontWeight.Bold)
                         WinProbChart(det.winProb, g.home.short, g.away.short)
                     }
                 }
@@ -758,11 +779,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewItems(g: Spor
         item(key = "rinkt") { HubSectionTitle("Schusskarte") }
         item(key = "rink") {
             HubPanel(Modifier.fillMaxWidth()) {
-                RinkChart(det.shots)
-                Row(Modifier.padding(top = dpx(6)), horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
-                    Text(raw = true, text = "● " + g.home.abbr + " " + det.shots.count { it.home }, color = Color(0xFFFF7A1A), fontSize = spx(13), fontWeight = FontWeight.Bold)
-                    Text(raw = true, text = "● " + g.away.abbr + " " + det.shots.count { !it.home }, color = Color(0xFF4F9CF9), fontSize = spx(13), fontWeight = FontWeight.Bold)
-                    Text(raw = true, text = "● " + Lang.tr("Tore") + " " + det.shots.count { it.goal }, color = Color(0xFFFFD166), fontSize = spx(13), fontWeight = FontWeight.Bold)
+                // The rink is wide and mostly empty: cap its width so it stops eating a quarter of the screen height
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth(0.56f)) { RinkChart(det.shots) }
+                }
+                Row(Modifier.padding(top = dpx(5)), horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
+                    Text(raw = true, text = "● " + g.home.abbr + " " + det.shots.count { it.home }, color = Color(0xFFFF7A1A), fontSize = spx(12), fontWeight = FontWeight.Bold)
+                    Text(raw = true, text = "● " + g.away.abbr + " " + det.shots.count { !it.home }, color = Color(0xFF4F9CF9), fontSize = spx(12), fontWeight = FontWeight.Bold)
+                    Text(raw = true, text = "● " + Lang.tr("Tore") + " " + det.shots.count { it.goal }, color = Color(0xFFFFD166), fontSize = spx(12), fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -791,8 +815,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.fieldItems(g: SportDa
 private fun BoxScoreSide(t: SportData.Team, side: SportMatch.Side?, soccer: Boolean, l: SportData.League?, hub: HubCtx, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(dpx(2))) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
-            TeamLogo(t.logo, t.abbr, dpx(22))
-            Text(raw = true, text = t.name + (if (side?.formation?.isNotBlank() == true) "  ·  " + side.formation else ""), color = Accent2, fontSize = spx(15), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TeamLogo(t.logo, t.abbr, dpx(18))
+            Text(raw = true, text = t.name + (if (side?.formation?.isNotBlank() == true) "  ·  " + side.formation else ""), color = Accent2, fontSize = spx(13.5), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (side != null) for (b in side.blocks) {
             val cols = columns(b)
@@ -800,17 +824,17 @@ private fun BoxScoreSide(t: SportData.Team, side: SportMatch.Side?, soccer: Bool
                 val start = b.players.filter { it.starter }
                 val bench = b.players.filter { !it.starter }
                 if (start.isNotEmpty()) {
-                    Text("Startelf", color = Muted, fontSize = spx(13), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = dpx(6), top = dpx(3)))
+                    Text("Startelf", color = Muted, fontSize = spx(11.5), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = dpx(5), top = dpx(2)))
                     start.forEach { p -> PlayerLineCompact(p, emptyList(), l, hub) }
                 }
                 if (bench.isNotEmpty()) {
-                    Text("Ersatzbank", color = Muted, fontSize = spx(13), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = dpx(6), top = dpx(3)))
+                    Text("Ersatzbank", color = Muted, fontSize = spx(11.5), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = dpx(5), top = dpx(2)))
                     bench.forEach { p -> PlayerLineCompact(p, emptyList(), l, hub) }
                 }
             } else {
-                Row(Modifier.fillMaxWidth().padding(start = dpx(6), end = dpx(6), top = dpx(3)), verticalAlignment = Alignment.CenterVertically) {
-                    Text(raw = true, text = b.name.replaceFirstChar { it.uppercase() }, color = Muted, fontSize = spx(13), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    cols.forEach { c -> Text(raw = true, text = b.labels[c], color = Muted, fontSize = spx(11), fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(38))) }
+                Row(Modifier.fillMaxWidth().padding(start = dpx(5), end = dpx(5), top = dpx(2)), verticalAlignment = Alignment.CenterVertically) {
+                    Text(raw = true, text = b.name.replaceFirstChar { it.uppercase() }, color = Muted, fontSize = spx(11.5), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    cols.forEach { c -> Text(raw = true, text = b.labels[c], color = Muted, fontSize = spx(10), fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(34))) }
                 }
                 b.players.forEach { p -> PlayerLineCompact(p, cols, l, hub) }
             }
@@ -831,16 +855,16 @@ private fun PlayerLineCompact(p: SportMatch.Player, cols: List<Int>, l: SportDat
             .onFocusChanged { f = it.isFocused }
             .trackFocus()
             .combinedClickable(onClick = { if (l != null && p.id.isNotBlank()) hub.nav.open(HubPage.Player(l, p.id, p.name)) })
-            .padding(horizontal = dpx(6), vertical = dpx(3)),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(6))
+            .padding(horizontal = dpx(5), vertical = dpx(2)),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(5))
     ) {
-        Box(Modifier.width(dpx(26)), contentAlignment = Alignment.Center) { TeamLogo(p.headshot, p.jersey, dpx(20)) }
-        Text(raw = true, text = p.name, color = Tok.TextHi, fontSize = spx(13), fontWeight = if (p.starter && cols.isNotEmpty()) FontWeight.SemiBold else FontWeight.Normal,
+        Box(Modifier.width(dpx(22)), contentAlignment = Alignment.Center) { TeamLogo(p.headshot, p.jersey, dpx(16)) }
+        Text(raw = true, text = p.name, color = Tok.TextHi, fontSize = spx(12), fontWeight = if (p.starter && cols.isNotEmpty()) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (p.pos.isNotBlank()) Text(raw = true, text = p.pos, color = Muted, fontSize = spx(12), modifier = Modifier.width(dpx(34)))
-        if (p.sub == "in") Text("eingewechselt", color = Accent2, fontSize = spx(11))
-        if (p.sub == "out") Text("ausgewechselt", color = Muted, fontSize = spx(11))
-        cols.forEach { c -> Text(raw = true, text = p.stats.getOrElse(c) { "" }, color = Tok.TextHi, fontSize = spx(12), textAlign = TextAlign.End, modifier = Modifier.width(dpx(38))) }
+        if (p.pos.isNotBlank()) Text(raw = true, text = p.pos, color = Muted, fontSize = spx(11), modifier = Modifier.width(dpx(30)))
+        if (p.sub == "in") Text("eingewechselt", color = Accent2, fontSize = spx(10))
+        if (p.sub == "out") Text("ausgewechselt", color = Muted, fontSize = spx(10))
+        cols.forEach { c -> Text(raw = true, text = p.stats.getOrElse(c) { "" }, color = Tok.TextHi, fontSize = spx(11), textAlign = TextAlign.End, modifier = Modifier.width(dpx(34))) }
     }
 }
 
@@ -855,12 +879,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.analyseItems(det: Spo
             val d = det.drives[i]
             val t = if (d.home) g.home else g.away
             Column(Modifier.fillMaxWidth().padding(start = dpx(12), end = dpx(12), top = dpx(6))) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
-                    TeamLogo(t.logo, t.abbr, dpx(24))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(7))) {
+                    TeamLogo(t.logo, t.abbr, dpx(20))
                     Text(raw = true, text = d.result, color = when (d.result) { "TD", "FG" -> Accent2; "INT", "MISSED FG" -> DS.Danger; else -> Tok.TextMid },
-                        fontSize = spx(15), fontWeight = FontWeight.Bold)
-                    Text(raw = true, text = d.label, color = Tok.TextHi, fontSize = spx(15), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(raw = true, text = d.plays.toString() + " plays · " + d.yards + " yds", color = Muted, fontSize = spx(14))
+                        fontSize = spx(13), fontWeight = FontWeight.Bold)
+                    Text(raw = true, text = d.label, color = Tok.TextHi, fontSize = spx(13), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(raw = true, text = d.plays.toString() + " plays · " + d.yards + " yds", color = Muted, fontSize = spx(12))
                 }
                 if (d.startPos >= 0 && d.endPos >= 0) {
                     val lo = minOf(d.startPos, d.endPos)
@@ -882,9 +906,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.analyseItems(det: Spo
         items(det.scoring.size) { i ->
             val s = det.scoring[i]
             FRow {
-                Text(raw = true, text = (if (hockey) "P" else "Q") + s.period + " " + s.clock, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(70)))
-                Text(raw = true, text = s.text, color = Tok.TextHi, fontSize = spx(14), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(raw = true, text = s.home.toString() + " – " + s.away, color = Tok.TextHi, fontSize = spx(15), fontWeight = FontWeight.Bold)
+                Text(raw = true, text = (if (hockey) "P" else "Q") + s.period + " " + s.clock, color = Accent2, fontSize = spx(12.5), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(62)))
+                Text(raw = true, text = s.text, color = Tok.TextHi, fontSize = spx(12.5), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(raw = true, text = s.home.toString() + " – " + s.away, color = Tok.TextHi, fontSize = spx(13.5), fontWeight = FontWeight.Bold)
             }
         }
     }

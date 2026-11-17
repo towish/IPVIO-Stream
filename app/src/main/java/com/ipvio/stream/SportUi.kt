@@ -204,7 +204,7 @@ internal fun MatchStatus(g: SportData.Game, big: Boolean = false) {
 @Composable
 internal fun HubSectionTitle(text: String, raw: Boolean = false, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, color = Tok.TextHi, fontSize = spx(19), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), raw = raw)
+        Text(text, color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), raw = raw)
         if (action != null && onAction != null) FilterPill(action, false, Modifier.trackFocus(), aicon = AIcon.Right) { onAction() }
     }
 }
@@ -234,7 +234,7 @@ internal fun FRow(
             .onFocusChanged { f = it.isFocused }
             .then(if (req != null) Modifier.trackFocus(req) else Modifier.trackFocus())
             .combinedClickable(onClick = onClick, onLongClick = onLong)
-            .padding(horizontal = dpx(12), vertical = dpx(8)),
+            .padding(horizontal = dpx(12), vertical = dpx(5)),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12)), content = content
     )
 }
@@ -495,16 +495,16 @@ internal fun LazyListScope.statisticsItems(stats: List<SportMatch.Stat>) {
         val lead = if (a != null && b != null && a != b) if (a > b) 1 else -1 else 0
         FRow {
             Text(raw = true, text = s.home, color = if (lead == 1) Accent2 else if (lead == -1) Muted else Tok.TextHi,
-                fontSize = spx(14), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(92)))
+                fontSize = spx(12.5), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(84)))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(raw = true, text = s.label, color = Muted, fontSize = spx(13), textAlign = TextAlign.Center)
-                if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(3)).height(dpx(5)).clip(RoundedCornerShape(50))) {
+                Text(raw = true, text = s.label, color = Muted, fontSize = spx(11.5), textAlign = TextAlign.Center)
+                if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(2)).height(dpx(4)).clip(RoundedCornerShape(50))) {
                     Box(Modifier.weight(maxOf(a, 0.01f)).fillMaxHeight().background(Accent2))
                     Box(Modifier.weight(maxOf(b, 0.01f)).fillMaxHeight().background(DS.Overlay4))
                 }
             }
             Text(raw = true, text = s.away, color = if (lead == -1) Accent2 else if (lead == 1) Muted else Tok.TextHi,
-                fontSize = spx(14), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(92)))
+                fontSize = spx(12.5), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(84)))
         }
     }
 }
@@ -516,11 +516,11 @@ internal fun WinProbChart(probs: List<Float>, homeShort: String, awayShort: Stri
     val last = probs.last().coerceIn(0f, 1f)
     val homePct = (last * 100f).roundToInt()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(raw = true, text = homeShort + " " + homePct + "%", color = Accent2, fontSize = spx(16), fontWeight = FontWeight.Bold)
-        Text(raw = true, text = "50%", color = Muted, fontSize = spx(14))
-        Text(raw = true, text = awayShort + " " + (100 - homePct) + "%", color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold)
+        Text(raw = true, text = homeShort + " " + homePct + "%", color = Accent2, fontSize = spx(13.5), fontWeight = FontWeight.Bold)
+        Text(raw = true, text = "50%", color = Muted, fontSize = spx(12))
+        Text(raw = true, text = awayShort + " " + (100 - homePct) + "%", color = Tok.TextHi, fontSize = spx(13.5), fontWeight = FontWeight.Bold)
     }
-    Canvas(Modifier.fillMaxWidth().height(dpx(140))) {
+    Canvas(Modifier.fillMaxWidth().height(dpx(92))) {
         val w = size.width
         val h = size.height
         fun y(p: Float) = h * (1f - p.coerceIn(0f, 1f))
@@ -591,9 +591,9 @@ internal fun LazyListScope.timelineItems(events: List<SportMatch.Ev>, max: Int =
     items(list.size) { i ->
         val e = list[i]
         FRow {
-            Text(raw = true, text = e.time, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(72)))
+            Text(raw = true, text = e.time, color = Accent2, fontSize = spx(12), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(62)))
             EventMark(e.type)
-            Text(raw = true, text = e.text, color = if (e.goal) Tok.TextHi else Tok.TextMid, fontSize = spx(14),
+            Text(raw = true, text = e.text, color = if (e.goal) Tok.TextHi else Tok.TextMid, fontSize = spx(12.5),
                 fontWeight = if (e.goal) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
         }
     }
@@ -659,31 +659,31 @@ internal fun MatchHeader(g: SportData.Game, logo: Int = 96) {
     if (g.solo) {
         Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
             MatchStatus(g, big = true)
-            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(34), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(raw = true, text = listOf(g.note, g.venue).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(16))
+            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(27), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(raw = true, text = listOf(g.note, g.venue).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(13.5))
         }
         return
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(20))) {
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(8))) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(5))) {
             TeamLogo(g.home.logo, g.home.abbr, dpx(logo))
-            Text(raw = true, text = g.home.name, color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            g.home.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(14)) }
+            Text(raw = true, text = g.home.name, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            g.home.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(12)) }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(4))) {
             MatchStatus(g, big = true)
             val long = (g.home.score?.length ?: 0) > 6 || (g.away.score?.length ?: 0) > 6
             if (long) {
-                Text(raw = true, text = g.home.score ?: "", color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.ExtraBold)
-                Text(raw = true, text = g.away.score ?: "", color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.ExtraBold)
-            } else Text(raw = true, text = if (g.state == 0) hhmm(g.start) else scoreLine(g), color = Tok.TextHi, fontSize = spx(54), fontWeight = FontWeight.ExtraBold)
+                Text(raw = true, text = g.home.score ?: "", color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.ExtraBold)
+                Text(raw = true, text = g.away.score ?: "", color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.ExtraBold)
+            } else Text(raw = true, text = if (g.state == 0) hhmm(g.start) else scoreLine(g), color = Tok.TextHi, fontSize = spx(40), fontWeight = FontWeight.ExtraBold)
             val info = listOf(if (g.state == 0) dayLabel(g.start) else "", g.venue).filter { it.isNotBlank() }.joinToString(" · ")
-            if (info.isNotBlank()) Text(raw = true, text = info, color = Muted, fontSize = spx(15), maxLines = 1)
+            if (info.isNotBlank()) Text(raw = true, text = info, color = Muted, fontSize = spx(13), maxLines = 1)
         }
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(8))) {
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(5))) {
             TeamLogo(g.away.logo, g.away.abbr, dpx(logo))
-            Text(raw = true, text = g.away.name, color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            g.away.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(14)) }
+            Text(raw = true, text = g.away.name, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            g.away.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(12)) }
         }
     }
 }
