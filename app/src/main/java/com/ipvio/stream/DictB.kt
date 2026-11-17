@@ -76,6 +76,10 @@ Topscorer¦Top scorers¦¦¦¦¦¦Meilleurs pointeurs¦
 Boxscore¦Box score¦¦¦¦¦¦Box score¦
 Spielabschnitte¦Periods¦¦¦¦¦¦Par période¦
 Highlights¦Highlights¦¦¦¦¦¦Faits saillants¦
+Gerade läuft¦On now¦¦¦¦¦¦En ce moment¦
+Was jetzt auf deinen Sendern läuft¦What is on your channels now¦¦¦¦¦¦Ce qui joue présentement sur tes chaînes¦
+Sport live¦Live sports¦¦¦¦¦¦Sport en direct¦
+Heute Abend¦Tonight¦¦¦¦¦¦Ce soir¦
 Spieler des Spiels¦Player of the game¦¦¦¦¦¦Joueur du match¦
 Auf dem Eis¦On the ice¦¦¦¦¦¦Sur la glace¦
 Siegwahrscheinlichkeit¦Win probability¦¦¦¦¦¦Probabilité de victoire¦
