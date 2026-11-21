@@ -81,6 +81,8 @@ Was jetzt auf deinen Sendern läuft¦What is on your channels now¦¦¦¦¦¦Ce 
 Sport live¦Live sports¦¦¦¦¦¦Sport en direct¦
 Heute Abend¦Tonight¦¦¦¦¦¦Ce soir¦
 Spieler des Spiels¦Player of the game¦¦¦¦¦¦Joueur du match¦
+Web-Quellen¦Web sources¦¦¦¦¦¦Sources web¦
+Quelle wählen¦Choose a source¦¦¦¦¦¦Choisir une source¦
 Auf dem Eis¦On the ice¦¦¦¦¦¦Sur la glace¦
 Siegwahrscheinlichkeit¦Win probability¦¦¦¦¦¦Probabilité de victoire¦
 Schusskarte¦Shot chart¦¦¦¦¦¦Carte des tirs¦
