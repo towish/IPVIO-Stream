@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -155,11 +156,25 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
         value = if (addTo != null && query.isBlank()) live
             else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { ChannelSearch.filter(live, query) }
     }
+    // Design D ("En ce moment"): the start page is a board of what is on now – history first, then favorites,
+    // then a couple of channels per category, so the table opens with relevant channels instead of card rows.
+    val board = remember(live, favs, groups) {
+        val seen = HashSet<String>()
+        val out = ArrayList<Item>()
+        fun add(l: List<Item>) { for (it in l) if (seen.add(it.id) && !ParentalLogic.isAdult(it.group, it.title)) out.add(it) }
+        add(History.ids.mapNotNull { id -> live.firstOrNull { it.id == id } })
+        add(favs)
+        for ((_, l) in groups) add(l.take(2))
+        out.take(80)
+    }
+    // Channel number = position in the full playlist (same numbering as the guide)
+    // T-029: Bell numbers with the Québec order (TVA = 103), otherwise positions; same numbers as the player and the guide
+    val numOf = remember(liveAll) { QcOrder.numbers(liveAll) }
     val rawList = when {
         sel == FAV_CAT -> favs
         sel == "ALL" -> live
         sel == "SEARCH" -> searchRes
-        sel == "HOME" -> emptyList()
+        sel == "HOME" -> board
         LiveGenre.isGenreKey(sel) -> genres[sel].orEmpty()
         sel == "REC" -> recs
         curList != null -> ChannelListLogic.resolve(curList, byIdLazy.value)
@@ -187,6 +202,8 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
     }
     var askDelete by remember { mutableStateOf(false) }
     val catState = remember { LazyListState() }
+    // Chips row: keep the selected category visible (it can sit far right in the row)
+    LaunchedEffect(sel) { val i = names.indexOf(sel); if (i >= 0) runCatching { catState.scrollToItem(i) } }
     var ask by remember { mutableStateOf<NameAsk?>(null) }
     SideEffect { ContentFocus.tab = 3 }
     // Selection points to a deleted list: back to "All channels"
@@ -216,14 +233,14 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
     }
     Box(Modifier.fillMaxSize()) {
         FocusedBackdrop(focusedState, Modifier.fillMaxSize())
-        Row(Modifier.fillMaxSize().padding(top = 20.dp)) {
-            LazyColumn(Modifier.width(270.dp).fillMaxHeight().padding(start = 24.dp, end = 8.dp), state = catState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
+            LazyRow(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 10.dp), state = catState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Stable keys: after moving a category, focus and menu state move with the row (duplicates get an index suffix)
                 itemsIndexed(names, key = { i, n -> catKeys.getOrElse(i) { "$n#$i" } }) { _, n ->
                     val ml = ChannelLists.byKey(n)
                     if (n == "GUIDE") {
                         // TV guide as in the design: starts the last watched (otherwise first) channel of the selection and opens the guide
-                        CatRow("TV-Guide", -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Grid) {
+                        CatChip("TV-Guide", -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Grid) {
                             val src = list.ifEmpty { live }
                             val ch = History.ids.firstNotNullOfOrNull { id -> src.firstOrNull { it.id == id && !ParentalLogic.isAdult(it.group, it.title) } } ?: src.firstOrNull()
                             if (ch != null) { ZapContext.list = src; ZapContext.key = sel; AppNav.openGuide = true; onOpen(ch) }
@@ -231,11 +248,11 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                         return@itemsIndexed
                     }
                     if (n == "MULTI") {
-                        CatRow(Lang.tr("Mehrfachansicht"), -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Layers, raw = true) { showMulti = true }
+                        CatChip(Lang.tr("Mehrfachansicht"), -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Layers, raw = true) { showMulti = true }
                         return@itemsIndexed
                     }
                     if (n == "SEARCH") {
-                        CatRow(
+                        CatChip(
                             Lang.tr("Sender suchen") + if (query.isNotBlank()) ": $query" else "", -1, sel == "SEARCH",
                             if (sel == "SEARCH") Modifier.focusRequester(ContentFocus.req) else Modifier,
                             onFocus = { sel = "SEARCH" },
@@ -258,7 +275,7 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                         }
                         val lbl = Lang.tr("Playlist") + ": " + (opts.getOrNull(curIdx) ?: "")
                         Box {
-                            CatRow(lbl, -1, false, Modifier.focusRequester(plFocus), onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Download, raw = true) { plOpen = true }
+                            CatChip(lbl, -1, false, Modifier.focusRequester(plFocus), onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Download, raw = true) { plOpen = true }
                             if (plOpen) OptionPopup(opts, curIdx, { plOpen = false; plBack = true }) { pick ->
                                 plOpen = false; plBack = true
                                 if (multiView && pick == 0) LiveSource.k = -1
@@ -279,7 +296,7 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                     }
                     if (n == "SRC") {
                         val lbl = Lang.tr("Quelle") + ": " + (if (srcK < 0) Lang.tr("Alle") else srcNames[srcK])
-                        CatRow(lbl, -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Sliders, raw = true) {
+                        CatChip(lbl, -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Sliders, raw = true) {
                             LiveSource.k = if (srcK + 1 >= srcNames.size) -1 else srcK + 1
                             // The chosen category may not exist in the other source: then "All channels"
                             if (sel != FAV_CAT && sel != "ALL" && ChannelLists.byKey(sel) == null) sel = "ALL"
@@ -290,7 +307,7 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                         var hidMenu by remember { mutableStateOf(false) }
                         val hid = HiddenCats.list.filter { it in groups || it in genres }
                         Box {
-                            CatRow(Lang.tr("Ausgeblendete") + " (" + hid.size + ")", -1, false, Modifier, onFocus = {}, onRight = {}, onFav = {}, icon = AIcon.Sliders, raw = true) { hidMenu = true }
+                            CatChip(Lang.tr("Ausgeblendete") + " (" + hid.size + ")", -1, false, Modifier, onFocus = {}, onRight = {}, onFav = {}, icon = AIcon.Sliders, raw = true) { hidMenu = true }
                             if (hidMenu) OptionPopup(listOf("Alle wieder einblenden") + hid.map { LiveGenre.byKey(it)?.label ?: it }, -1, { hidMenu = false }) { i ->
                                 hidMenu = false
                                 if (i == 0) HiddenCats.showAll(ctx) else HiddenCats.show(ctx, hid[i - 1])
@@ -299,7 +316,7 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                         return@itemsIndexed
                     }
                     if (n == "NEW") {
-                        CatRow("Neue Senderliste", -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Plus) { newList(null) }
+                        CatChip("Neue Senderliste", -1, false, Modifier, onFocus = {}, onRight = { runCatching { firstChan.requestFocus() } }, onFav = {}, icon = AIcon.Plus) { newList(null) }
                         return@itemsIndexed
                     }
                     val label = when {
@@ -333,7 +350,7 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                     var genMenu by remember { mutableStateOf(false) }
                     val plainCat = ml == null && n != FAV_CAT && n != "ALL" && n != "REC" && n != "HOME" && !LiveGenre.isGenreKey(n) && groups.containsKey(n)
                     Box {
-                        CatRow(
+                        CatChip(
                             label, count, n == sel,
                             if (n == sel) Modifier.focusRequester(ContentFocus.req) else Modifier,
                             onFocus = { sel = n }, onRight = { runCatching { firstChan.requestFocus() } },
@@ -378,11 +395,16 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                     }
                 }
             }
-            // With no live channels at all the plain list shows the hint instead of an empty home
-            if (sel == "HOME" && live.isNotEmpty()) Box(Modifier.weight(2f).fillMaxHeight().padding(end = 24.dp)) {
-                LiveHome(live, genres.filterKeys { it !in HiddenCats.list }, favs, firstChan, onOpen = { ch, l -> ZapContext.list = l; ZapContext.key = "ALL"; onOpen(ch) })
-            } else {
-            Column(Modifier.weight(0.9f).fillMaxHeight().padding(end = 24.dp)) {
+            Row(Modifier.fillMaxSize()) {
+            Column(Modifier.weight(2f).fillMaxHeight().padding(start = 24.dp, end = 16.dp)) {
+                if (sel == "HOME") Row(
+                    Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(DS.Danger))
+                    Text("Gerade läuft", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Was jetzt auf deinen Sendern läuft", color = Muted, fontSize = 12.sp)
+                }
                 // Own list: rename and delete clearly visible above the channels (before only via long OK on the list)
                 if (curList != null) Row(
                     Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -424,14 +446,9 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                     }
                 ) else LazyColumn(
                     state = chanState,
-                    // Held Down/Up key: at most ~9 steps per second, so a weak box is not flooded with scroll animations and rebinds
-                    modifier = Modifier.onPreviewKeyEvent { e ->
-                        if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.DirectionUp) && e.nativeKeyEvent.repeatCount > 0) {
-                            val now = android.os.SystemClock.uptimeMillis()
-                            LiveHold.lastRepeat = now
-                            if (now - LiveHold.lastStep < 110) true else { LiveHold.lastStep = now; false }
-                        } else false
-                    },
+                    // Held Down/Up key: limited steps per second, so a weak box is not flooded with scroll animations and rebinds;
+                    // faster the longer the key is held (T-030, shared with the player channel menu and the guide)
+                    modifier = Modifier.liveHoldThrottle(),
                     verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)
                 ) {
                     // In own lists the focus moves along with the channel when moving it (key = channel)
@@ -444,21 +461,22 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                             onNewList = { newList(ch.id) },
                             onFocus = { focusTarget = ch; plScope.launch { holdJump(chanState, i) } },
                             variants = variantsOf[ch.id].orEmpty(),
+                            num = numOf[ch.id] ?: -1,
                             favShown = if (sel == FAV_CAT) list else null,
-                            onVariant = { v -> ZapContext.list = list; ZapContext.key = sel; LiveMemory.setSel(ctx, sel); onOpen(v) }
+                            onVariant = { v -> ZapContext.list = list; ZapContext.key = if (sel == "HOME") "ALL" else sel; LiveMemory.setSel(ctx, sel); onOpen(v) }
                         ) {
                             if (addList != null) {
                                 val has = ch.id in addList.ids
                                 if (has) ChannelLists.remove(ctx, addList.id, ch.id) else ChannelLists.add(ctx, addList.id, ch.id)
                                 Toast.makeText(ctx, (if (has) Lang.tr("Entfernt: ") else Lang.tr("Hinzugefügt: ")) + ch.title, Toast.LENGTH_SHORT).show()
                             } else if (sel == "REC") onPlayNow(ch)   // Recording: play like a movie (seekable)
-                            else { ZapContext.list = list; ZapContext.key = sel; LiveMemory.setSel(ctx, sel); onOpen(ch) }
+                            else { ZapContext.list = list; ZapContext.key = if (sel == "HOME") "ALL" else sel; LiveMemory.setSel(ctx, sel); onOpen(ch) }
                         }
                     }
                 }
             }
-            // Right: what is on the selected channel
-            Box(Modifier.weight(1.1f).fillMaxHeight().padding(start = dpx(30), end = dpx(60), top = dpx(150))) {
+            // Right rail (design D): live sports + prime time; the search keeps its keyboard and preview here
+            Box(Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp, end = 24.dp)) {
                 if (sel == "SEARCH") Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxWidth()) { FocusedNowPanel(focusedState, list.firstOrNull()) }
                     Spacer(Modifier.height(10.dp))
@@ -475,7 +493,7 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                         onPhone = null, onVoice = null,
                         firstKey = kbFirst, onFocusChange = {}, onRight = { true }
                     )
-                } else FocusedNowPanel(focusedState, list.firstOrNull())
+                } else LiveRail(list)
             }
                     }
 }
@@ -507,30 +525,29 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
 }
 
 @Composable
-private fun CatRow(
+private fun CatChip(
     label: String, count: Int, selected: Boolean, modifier: Modifier,
     onFocus: () -> Unit, onRight: () -> Unit, onFav: () -> Unit, icon: AIcon? = null, raw: Boolean = false, onClick: () -> Unit
 ) {
     var f by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(DS.RadiusS)
+    val shape = RoundedCornerShape(50)
     Row(
-        modifier.fillMaxWidth().clip(shape)
-            .background(if (f) Color(0x33FFFFFF) else if (selected) Accent1.copy(alpha = 0.16f) else Color.Transparent)
+        modifier.clip(shape)
+            .background(if (f) Color(0x2EFFFFFF) else if (selected) Accent1.copy(alpha = 0.18f) else Color(0x0DFFFFFF))
+            .border(1.dp, if (f) Accent2 else if (selected) Accent1.copy(alpha = 0.55f) else Color(0x1AFFFFFF), shape)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) onFocus() }
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight && e.nativeKeyEvent.repeatCount == 0) { onRight(); true } else false
+                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && e.nativeKeyEvent.repeatCount == 0) { onRight(); true } else false
             }
             .favKeys { onFav() }
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(Modifier.weight(1f, fill = false), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) AppIcon(icon, if (icon == AIcon.Star) DS.Gold else Color.White, size = 17.dp)
-            Text(label, color = Color.White, fontSize = 16.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, raw = raw)
-        }
-        if (count >= 0) Text("$count", color = Muted, fontSize = 13.sp)
+        if (icon != null) AppIcon(icon, if (icon == AIcon.Star) DS.Gold else if (selected) Accent2 else Color.White, size = 15.dp)
+        Text(label, color = if (selected) Accent2 else Color.White, fontSize = 13.5.sp, fontWeight = if (selected || f) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, raw = raw)
+        if (count >= 0) Text("$count", color = Muted, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -538,13 +555,13 @@ private fun CatRow(
 private class RowDims(val height: Dp, val pad: Dp, val logo: Dp, val title: TextUnit, val epg: TextUnit, val badge: TextUnit, val gap: Dp, val bar: Dp, val icon: Dp)
 
 private val ROW_DIMS = arrayOf(
-    RowDims(72.dp, 8.dp, 40.dp, 16.sp, 11.sp, 10.sp, 1.dp, 2.dp, 16.dp),    // small
-    RowDims(100.dp, 12.dp, 56.dp, 19.sp, 13.sp, 11.sp, 3.dp, 3.dp, 20.dp),  // normal
-    RowDims(116.dp, 12.dp, 64.dp, 21.sp, 14.sp, 12.sp, 4.dp, 3.dp, 22.dp)   // large
+    RowDims(54.dp, 6.dp, 34.dp, 14.sp, 11.sp, 10.sp, 1.dp, 3.dp, 15.dp),    // small (design D table)
+    RowDims(62.dp, 8.dp, 42.dp, 15.sp, 12.sp, 10.sp, 1.dp, 3.dp, 17.dp),    // normal
+    RowDims(74.dp, 10.dp, 52.dp, 16.sp, 13.sp, 11.sp, 2.dp, 3.dp, 19.dp)    // large
 )
 
 @Composable
-private fun ChannelLine(item: Item, modifier: Modifier, inList: ChList?, onNewList: () -> Unit, onFocus: () -> Unit = {}, variants: List<Item> = emptyList(), onVariant: (Item) -> Unit = {}, favShown: List<Item>? = null, onClick: () -> Unit) {
+private fun ChannelLine(item: Item, modifier: Modifier, inList: ChList?, onNewList: () -> Unit, onFocus: () -> Unit = {}, variants: List<Item> = emptyList(), onVariant: (Item) -> Unit = {}, favShown: List<Item>? = null, num: Int = -1, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     Box {
@@ -576,9 +593,9 @@ private fun ChannelLine(item: Item, modifier: Modifier, inList: ChList?, onNewLi
             .clickable(onClick = onClick)
             .padding(dims.pad),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        ChannelLineContent(item, epg, variants.size, dims)
+        ChannelLineContent(item, num, epg, variants.size, dims)
     }
     }
 }
@@ -589,12 +606,14 @@ private fun ChannelLine(item: Item, modifier: Modifier, inList: ChList?, onNewLi
  * formatting and the favorite, catch-up and dead-link checks do not run again on every focus move.
  */
 @Composable
-private fun RowScope.ChannelLineContent(item: Item, epg: List<EpgEntry>, variantCount: Int, dims: RowDims) {
+private fun RowScope.ChannelLineContent(item: Item, num: Int, epg: List<EpgEntry>, variantCount: Int, dims: RowDims) {
     val nowE = Epg.current(epg)
     val nextE = epg.firstOrNull { nowE != null && it.start >= nowE.end }
+    // Design D table: number | logo | name + group | on now | progress | up next | status icons
+    if (num > 0) Text(raw = true, text = "$num", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, style = TNUM, maxLines = 1, modifier = Modifier.width(40.dp))
     ChannelLogo(item.logo, item.title, dims.logo)
-    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dims.gap)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.width(168.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(raw = true, text = item.title, color = Tok.TextHi, fontSize = dims.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             val lq = remember(item.id) { LiveQuality.get(item.id) ?: item.quality }
             if (lq != null) Box(Modifier.clip(RoundedCornerShape(DS.RadiusXs)).background(Color(0x26FFFFFF)).padding(horizontal = 6.dp, vertical = 1.dp)) {
@@ -605,14 +624,26 @@ private fun RowScope.ChannelLineContent(item: Item, epg: List<EpgEntry>, variant
                 Text(raw = true, text = "+" + (variantCount - 1), color = Muted, fontSize = dims.badge, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
+        Text(raw = true, text = item.group, color = Muted, fontSize = 10.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    Column(Modifier.weight(1f)) {
+        if (nowE != null) Text(raw = true, text = nowE.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        else Text(raw = true, text = "—", color = Muted, fontSize = 13.sp, maxLines = 1)
+    }
+    Column(Modifier.width(132.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         if (nowE != null) {
             val frac = ((System.currentTimeMillis() / 1000 - nowE.start).toFloat() / (nowE.end - nowE.start)).coerceIn(0f, 1f)
-            Text(raw = true, text = "${hhmm(nowE.start)}–${hhmm(nowE.end)}  ${nowE.title}", color = Accent2, fontSize = dims.epg, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Box(Modifier.fillMaxWidth().height(dims.bar).clip(RoundedCornerShape(50)).background(DS.Overlay3)) {
                 Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Accent2))
             }
-            if (nextE != null) Text(raw = true, text = "${hhmm(nextE.start)}  ${nextE.title}", color = Muted, fontSize = dims.epg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        } else Text(raw = true, text = item.group, color = Muted, fontSize = dims.epg, maxLines = 1)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(raw = true, text = hhmm(nowE.start), color = Muted, fontSize = 9.5.sp, maxLines = 1)
+                Text(raw = true, text = hhmm(nowE.end), color = Muted, fontSize = 9.5.sp, maxLines = 1)
+            }
+        }
+    }
+    Column(Modifier.width(190.dp)) {
+        if (nextE != null) Text(raw = true, text = "${hhmm(nextE.start)}  ${nextE.title}", color = Muted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
     if (Catchup.version >= 0 && Catchup.has(item)) AppIcon(AIcon.Catchup, Accent2, size = dims.icon)
     // DeadLinks.count is read as a change signal (same pattern as Catchup.version): isDead itself is a plain map lookup
@@ -623,10 +654,9 @@ private fun RowScope.ChannelLineContent(item: Item, epg: List<EpgEntry>, variant
 /** Logo of a channel row. Own composable with plain String parameters, so a focus change of the row skips it (no new image request). */
 @Composable
 private fun ChannelLogo(logo: String?, title: String, size: Dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(DS.RadiusS)).background(DS.Overlay2), contentAlignment = Alignment.Center) {
-        if (logo != null) AsyncImage(logo, null, Modifier.fillMaxSize().padding(6.dp), contentScale = ContentScale.Fit)
-        else Text(raw = true, text = title.take(2).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-    }
+    // T-030: the same badge as the player channel menu and the guide: letters of the name ("TVA", not "CA") when there is
+    // no logo or it does not load
+    ChannelLogoBadge(logo, title, size)
 }
 
 /**
@@ -654,6 +684,90 @@ fun ChannelMenu(item: Item, inList: ChList?, onNewList: (() -> Unit)?, variants:
     }
     if (onNewList != null) acts.add(Triple("Neue Senderliste …", AIcon.Plus, onNewList))
     OptionPopup(acts.map { it.first }, -1, onClose, acts.map { it.second }) { i -> onClose(); acts[i].third() }
+}
+
+/** Right rail of the Live tab (design D): clock, live sports scorebugs and tonight's prime-time picks from the guide. */
+@Composable
+private fun LiveRail(list: List<Item>) {
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(30_000); tick++ } }
+    val clockText = remember(tick) { hhmm(System.currentTimeMillis() / 1000) }
+    val games by produceState<List<SportData.Game>>(emptyList()) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val ymd = SportData.ymd(0, General.zone())
+            val leagues = SportData.LEAGUES.filter { it.name == "NHL" || it.name == "LHJMQ" || it.name == "OHL" || it.name == "WHL" || it.name == "NFL" }
+            val all = leagues.flatMap { l -> runCatching { SportData.fetch(l, ymd, 60_000) }.getOrDefault(emptyList()) }
+            val live = all.filter { it.state == 1 }.sortedByDescending { it.start }
+            val fin = all.filter { it.state == 2 }.sortedByDescending { it.start }
+            (live + fin).take(3)
+        }
+    }
+    val prime by produceState<List<Triple<String, String, String>>>(emptyList(), list) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val nowSec = System.currentTimeMillis() / 1000
+            val cal = java.util.Calendar.getInstance(General.zone())
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 19); cal.set(java.util.Calendar.MINUTE, 30); cal.set(java.util.Calendar.SECOND, 0)
+            var from = cal.timeInMillis / 1000
+            if (from < nowSec) from = nowSec
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 0)
+            val to = cal.timeInMillis / 1000
+            if (to <= from) emptyList()
+            else list.take(48).flatMap { ch -> (Epg.peek(ch) ?: emptyList()).filter { it.start in from..to }.map { Triple(hhmm(it.start), it.title, ch.title) } }
+                .distinctBy { it.second }.sortedBy { it.first }.take(4)
+        }
+    }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text(raw = true, text = clockText, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+        }
+        if (games.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(DS.Danger))
+                Text("Sport live", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            }
+            games.forEach { g -> ScoreBug(g) }
+        }
+        if (prime.isNotEmpty()) {
+            Text("Heute Abend", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 4.dp))
+            prime.forEach { (time, title, ch) ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(raw = true, text = time, color = Accent2, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(38.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(raw = true, text = title, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(raw = true, text = ch, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One compact scorebug of the rail: league + state on top, both teams with logo, abbreviation and score. */
+@Composable
+private fun ScoreBug(g: SportData.Game) {
+    val shape = RoundedCornerShape(DS.RadiusM)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(Surf).border(1.dp, DS.Overlay3, shape).padding(horizontal = 11.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(raw = true, text = g.league, color = DS.Danger, fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            val st = when (g.state) {
+                1 -> listOfNotNull(if (g.period > 0) "P${g.period}" else null, g.clock.ifBlank { null }).joinToString(" · ").ifBlank { g.statusName }
+                2 -> "FINAL"
+                else -> hhmm(g.start)
+            }
+            Text(raw = true, text = st, color = if (g.state == 1) Color(0xFFFFD166) else Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+        for (t in listOf(g.away, g.home)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TeamLogo(t.logo, t.abbr, 20.dp)
+                Text(raw = true, text = t.abbr, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Spacer(Modifier.weight(1f))
+                Text(raw = true, text = t.score ?: "", color = if (t.winner) Accent2 else Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            }
+        }
+    }
 }
 
 /**

@@ -3,8 +3,8 @@ package com.ipvio.stream
 import java.util.Calendar
 import java.util.TimeZone
 
-/** A show in the program (times in seconds since 1970, UTC). */
-data class EpgEntry(val title: String, val desc: String, val start: Long, val end: Long)
+/** A show in the program (times in seconds since 1970, UTC). [icon] = picture of the show from the XMLTV feed, if any. */
+data class EpgEntry(val title: String, val desc: String, val start: Long, val end: Long, val icon: String? = null)
 
 /**
  * Archive (catchup) of a channel: how the address of a past show is built and how many days back it goes.

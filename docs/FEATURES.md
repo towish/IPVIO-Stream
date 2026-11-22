@@ -28,9 +28,14 @@ Feature status at version 1.3 (commit `b65e838`, tag `V1.3`). Source: refactorin
 | Favorites for channels, movies and series with manual order | present (order: T-018) | `Store.kt` (`Library`), `FavOrderLogic.kt`, `FavReorder.kt`, `HomeScreen.kt` (Favorites tab), `LiveTab.kt` |
 | Hide categories, ignore groups, language filter | present | `HiddenCats.kt:6`, `IgnoredGroups.kt:8`, `LangFilter.kt:20` |
 | Live quality bundles | present | `LiveBundle.kt:3` |
+| Québec-first channel order (Bell Fibe line-up) | present (T-026, device test pending) | `QcLineupLogic.kt`, `QcOrder.kt`; setting in `General.kt` (`qc_order`, `qc_region`) |
+| Bell channel numbers and digit entry | present (T-029, device test pending) | `QcLineupLogic.sortNumbered`, `QcOrder.numbering`, `PlayerScreen.kt` `commitDigits` |
+| Home "Tonight" row, ambient color | present (T-032, T-033, device test pending) | `TonightLogic.kt`, `AmbientLogic.kt`, `HomeParts.kt`, `Billboard.kt` |
+| Cinema mode in the player (hold Back) | present (T-035, device test pending) | `PlayerScreen.kt` |
 | Voice search, reminders, screen-edge calibration | present | `VoiceSearch.kt:8`, `Live.kt:71, 192`, `FitCalibration.kt:35` |
 | Updates via GitHub Releases | present | verified by Android signature, no hash check (`AppUpdate.kt:20-34`, `Round17Logic.kt:14-45`) |
 | 10 languages | present | `I18nCore.kt:9` |
+| Start intro (DubTvP) | present (T-036) | `Brand.kt` (`BrandIntro`), `BrandIntroLogic.kt`, `MainActivity.kt` (`dispatchKeyEvent`) |
 | Google Drive backup | removed in 1.2, planned for 1.4 (LiveSync) | `DriveSync.kt` is empty. Old code: tag `V1.1` (`DriveSync.kt`, `TransferUi.kt`). See [GOOGLE_DRIVE.md](GOOGLE_DRIVE.md) |
 | Licence system | not in the repository | removed on purpose when the project became open source (audit section 14) |
 | IMDb dataset import | removed | only clean-up of old files remains (`General.kt:208-212`); IMDb values come through OMDb |

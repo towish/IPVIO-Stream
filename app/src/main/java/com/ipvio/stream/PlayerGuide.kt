@@ -61,13 +61,21 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.LongState
+import androidx.compose.runtime.snapshots.Snapshot
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Shortly after closing a selection window in the guide (Back) do not perform another back step. */
 object GuideBack {
@@ -76,12 +84,14 @@ object GuideBack {
     var handler: (() -> Unit)? = null
 }
 
-/** Remembers the view of the TV guide (zoom, row height, past shows). */
+/** Remembers the view of the TV guide (zoom, row height, past shows, guide-only channels). */
 object GuidePrefs {
     // Default (round 14, user's wish): zoom "Large", row height "Compact"
     var zoom by mutableIntStateOf(2)
     var rowSize by mutableIntStateOf(0)
     var hidePast by mutableStateOf(false)
+    /** Only channels with known program data (loaded XMLTV or EPG already fetched once). */
+    var onlyWithGuide by mutableStateOf(false)
     private var inited = false
 
     fun init(c: Context) {
@@ -93,11 +103,12 @@ object GuidePrefs {
         zoom = p.getInt("zoom", 2).coerceIn(0, 2)
         rowSize = p.getInt("row", 0).coerceIn(0, 2)
         hidePast = p.getBoolean("past", false)
+        onlyWithGuide = p.getBoolean("onlyGuide", false)
     }
 
     fun save(c: Context) {
         Profiles.sp(c, "ipvio_guide").edit()
-            .putInt("zoom", zoom).putInt("row", rowSize).putBoolean("past", hidePast).apply()
+            .putInt("zoom", zoom).putInt("row", rowSize).putBoolean("past", hidePast).putBoolean("onlyGuide", onlyWithGuide).apply()
     }
 }
 
@@ -113,13 +124,23 @@ fun Guide(
 ) {
     val ctx = LocalContext.current
     GuidePrefs.init(ctx)
+    GuideCollections.init(ctx)
+    // Keyword matching folds every channel title: build that cache off the main thread.
+    // The guide opens at once (without collections); they appear when the scan finishes.
+    LaunchedEffect(all) {
+        withContext(Dispatchers.Default) { GuideCollectionLogic.buildCache(all) }
+        GuideCollections.touch()
+    }
     val openedAt = remember { System.currentTimeMillis() / 1000 }
     val base = (openedAt - 1800) - ((openedAt - 1800) % 1800)
     // Channels with archive (catchup): this many days can be scrolled back
     val pastDays = remember(list, Catchup.version) { Catchup.maxDays(list) }
     val minStart = base - pastDays * 86400L
     // "Now" moves along: the highlight and the state of the shows are updated every 30 s
-    var nowSec by remember { mutableLongStateOf(openedAt) }
+    // T-028: the rows get the state object, not the value: a new "now" redraws the progress and the now line, and recomposes
+    // only the shows whose state changes (upcoming → now → past), instead of every visible row every 30 s
+    val nowState = remember { mutableLongStateOf(openedAt) }
+    var nowSec by nowState
     LaunchedEffect(Unit) { while (true) { delay(30_000); nowSec = System.currentTimeMillis() / 1000 } }
     // dp per minute: "Small" shows a good 3 hours at once, "Medium" a good 2 hours
     val zooms = listOf(3.5f, 5f, 8f)
@@ -138,11 +159,30 @@ fun Guide(
     var rowReq by remember { mutableStateOf<FocusRequester?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
-    // Categories on the left (as in the design): current list, all channels, favorites, own lists, provider groups
-    val cats = remember(list, all, Library.favs.size, ChannelLists.lists.size) { guideCategories(list, all) }
+    var showCollections by remember { mutableStateOf(false) }
+    // Categories on the left (as in the design): current list, all channels, favorites, own lists, collections, provider groups
+    // Memoized: building the categories scans the whole channel list (collections match by keyword),
+    // so it only runs again when the list, the collections, the guide-only switch or the loaded EPG changes.
+    val cats = remember(list, all, Library.favs.size, ChannelLists.lists.size, GuideCollections.version, GuidePrefs.onlyWithGuide, Xmltv.channelCount) { guideCategories(list, all) }
     var catIdx by remember { mutableIntStateOf(0) }
     val shown = cats.getOrNull(catIdx)?.items ?: list
     val catReq = remember { FocusRequester() }
+    // T-028: a focus step in the categories no longer switches the grid (each switch rebuilt the rows and started loading their
+    // program). The grid follows after a short rest and never while Up/Down is held; OK switches at once.
+    var catHover by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(catHover) {
+        val h = catHover
+        if (h < 0 || h == catIdx) return@LaunchedEffect
+        delay(ChannelMenuLogic.PREVIEW_DELAY_MS)
+        while (LiveHold.active()) delay(80)
+        catIdx = h
+    }
+    val catScope = rememberCoroutineScope()
+    val catLs = rememberLazyListState()
+    // Channel numbers: the same as Live TV and the channel menu (Bell numbers with the Québec order, T-029)
+    val numOf by produceState(emptyMap<String, Int>(), all) {
+        value = withContext(Dispatchers.Default) { QcOrder.numbers(all) }
+    }
     val idx = shown.indexOfFirst { it.id == curId }.coerceAtLeast(0)
     val ls = key(catIdx) { rememberLazyListState(maxOf(idx - 1, 0)) }
 
@@ -186,6 +226,7 @@ fun Guide(
     // The player intercepts the Back key and calls this step via GuideBack.handler (before, it closed the guide immediately).
     val backStep by androidx.compose.runtime.rememberUpdatedState<() -> Unit> {
         if (System.currentTimeMillis() >= GuideBack.mutedUntil) when {
+            showCollections -> showCollections = false
             inBlock -> {
                 val r = rowReq
                 if (r == null || !runCatching { r.requestFocus() }.isSuccess) { if (!runCatching { catReq.requestFocus() }.isSuccess) onClose() }
@@ -205,6 +246,7 @@ fun Guide(
         onPick = { ch -> showSearch = false; val p = onPickIn; if (p != null) p(ch, all) else onPick(ch) },
         onClose = { showSearch = false; GuideBack.mutedUntil = System.currentTimeMillis() + 400 }
     )
+    if (showCollections) CollectionEditor(onClose = { showCollections = false })
     // Top: header + selected show on the left, the running picture on the right (PlayerScreen shrinks it to 400 × 225 dp, top right).
     // Below: categories and program grid across the full width – so several hours are visible at once.
     Column(
@@ -217,7 +259,7 @@ fun Guide(
                     addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height))
                     addRoundRect(hole)
                 }
-                drawPath(path, Color(0xF7090B12))
+                drawPath(path, Bg.copy(alpha = 0.97f))
             }
             .padding(start = 24.dp, top = 14.dp, bottom = 10.dp, end = 24.dp)
     ) {
@@ -267,6 +309,14 @@ fun Guide(
                                         Text("Vergangene Sendungen", color = Color.White, fontSize = 15.sp)
                                         SmallPill(if (GuidePrefs.hidePast) "Ausblenden" else "Abdunkeln") { GuidePrefs.hidePast = !GuidePrefs.hidePast; GuidePrefs.save(ctx) }
                                     }
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text("Nur Sender mit Programm", color = Color.White, fontSize = 15.sp)
+                                        SmallPill(if (GuidePrefs.onlyWithGuide) "Ein" else "Aus") { GuidePrefs.onlyWithGuide = !GuidePrefs.onlyWithGuide; GuidePrefs.save(ctx) }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text("Sammlungen", color = Color.White, fontSize = 15.sp)
+                                        SmallPill("Verwalten") { showSettings = false; showCollections = true }
+                                    }
                                     Text("Zurück: Sendung, Sender, Kategorie, dann schließen", color = Muted, fontSize = 13.sp)
                                     Text("Jetzt ${hhmm(nowSec)} · Zeitzone ${epgZone().id} (änderbar unter Einstellungen > Sprache & Region)", color = Muted, fontSize = 13.sp)
                                 }
@@ -281,60 +331,82 @@ fun Guide(
         Row(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
             // Categories
             LazyColumn(
-                Modifier.width(206.dp).fillMaxHeight().clip(RoundedCornerShape(DS.RadiusL)).background(Color(0x0FFFFFFF)),
+                Modifier.width(206.dp).fillMaxHeight().clip(RoundedCornerShape(DS.RadiusL)).background(Color(0x0FFFFFFF)).liveHoldThrottle()
+                    // Right = into the grid of the focused category, also when its preview has not started yet
+                    .onPreviewKeyEvent { ev ->
+                        val h = catHover
+                        if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionRight && h >= 0 && h != catIdx) {
+                            catHover = -1
+                            catIdx = h
+                            catScope.launch { repeat(10) { if (runCatching { focus.requestFocus() }.isSuccess) return@launch; delay(50) } }
+                            true
+                        } else false
+                    },
+                state = catLs,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 itemsIndexed(cats) { ci, c ->
                     GuideCatRow(c, ci == catIdx, if (ci == catIdx) Modifier.focusRequester(catReq) else Modifier,
-                        onFocus = { inCats = true; inBlock = false; if (catIdx != ci) catIdx = ci }, onLeft = onClose) { runCatching { focus.requestFocus() } }
+                        onFocus = { inCats = true; inBlock = false; catHover = ci; catScope.launch { holdJump(catLs, ci) } }, onLeft = onClose) {
+                        // OK: this category at once, then into the grid (its rows need a frame or two before they take the focus)
+                        catHover = -1
+                        catIdx = ci
+                        catScope.launch { repeat(10) { if (runCatching { focus.requestFocus() }.isSuccess) return@launch; delay(50) } }
+                    }
                 }
             }
             Spacer(Modifier.width(12.dp))
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(DS.RadiusL)).background(Color(0x0AFFFFFF)).padding(horizontal = 8.dp, vertical = 6.dp)) {
-                val vm = ((maxWidth - 208.dp).value / dpm).toInt().coerceAtLeast(40)
+                val vm = ((maxWidth - GUIDE_CELL_W).value / dpm).toInt().coerceAtLeast(40)
+                val headerW = (maxWidth - GUIDE_CELL_W).value
                 SideEffect { if (viewMin != vm) viewMin = vm }
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.height(34.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(raw = true, text = cats.getOrNull(catIdx)?.name?.let { Lang.tr(it) } ?: "", color = Muted, fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(208.dp).padding(start = 6.dp))
+                            fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(GUIDE_CELL_W).padding(start = 6.dp))
                         Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
                             // only the visible time marks (with archive the grid reaches days back)
                             var t = maxOf(minStart, winStart - winStart % 1800 - 3600)
                             val tEnd = minOf(base + maxSpan, winStart + viewMin * 60L + 3600)
                             while (t < tEnd) {
                                 val x = (t - winStart) / 60f * dpm
-                                if (x > -100f && x < viewMin * dpm + 40f) {
-                                    val isDay = SettingsLogic.isMidnight(t, epgZone())
+                                val isDay = SettingsLogic.isMidnight(t, epgZone())
+                                // T-028: only marks that fit completely (before, the first and last mark were cut in half at the edges)
+                                if (GuideGridLogic.labelFits(x, if (isDay) GuideGridLogic.DAY_LABEL_W else GuideGridLogic.TIME_LABEL_W, headerW)) {
                                     val label = if (isDay) dayLabel(t) else hhmm(t)
+                                    val full = isDay || t % 3600L == 0L
+                                    Box(Modifier.offset(x = x.dp).width(1.dp).height(if (full) 10.dp else 6.dp).background(if (full) DS.Overlay4 else DS.Overlay2).align(Alignment.BottomStart))
                                     Text(
-                                        label, color = if (isDay) Accent2 else Muted, fontSize = 13.sp,
-                                        fontWeight = if (isDay || t % 3600L == 0L) FontWeight.Bold else FontWeight.Medium, style = TNUM,
-                                        modifier = Modifier.offset(x = x.dp).align(Alignment.CenterStart)
+                                        raw = true, text = label, color = if (isDay) Accent2 else if (full) Tok.TextMid else Muted, fontSize = 13.sp,
+                                        fontWeight = if (full) FontWeight.Bold else FontWeight.Medium, style = TNUM, maxLines = 1,
+                                        modifier = Modifier.offset(x = (x + 5f).dp).align(Alignment.CenterStart)
                                     )
                                 }
                                 t += 1800
                             }
                             val nx = (nowSec - winStart) / 60f * dpm
-                            if (nx > 0f && nx < viewMin * dpm) Box(Modifier.offset(x = (nx - 3f).dp).size(6.dp).clip(RoundedCornerShape(50)).background(Accent2).align(Alignment.BottomStart))
+                            if (nx > 0f && nx < viewMin * dpm) Box(Modifier.offset(x = (nx - 4f).dp).size(8.dp).clip(RoundedCornerShape(50)).background(Accent2).align(Alignment.BottomStart))
                         }
                     }
                     if (shown.isEmpty()) Text("Keine Sender", color = Muted, fontSize = 15.sp, modifier = Modifier.padding(16.dp))
                     LazyColumn(
                         state = ls,
                         // Held Up/Down: at most ~9 steps per second (as in the Live TV list), and rows wait with loading
-                        modifier = Modifier.weight(1f).onPreviewKeyEvent { e ->
-                            if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.DirectionUp) && e.nativeKeyEvent.repeatCount > 0) {
-                                val now = android.os.SystemClock.uptimeMillis()
-                                LiveHold.lastRepeat = now
-                                if (now - LiveHold.lastStep < 110) true else { LiveHold.lastStep = now; false }
-                            } else false
-                        }
+                        modifier = Modifier.weight(1f).liveHoldThrottle()
+                            // One "now" line over all rows, drawn on top (read in the draw phase: moving it costs no recomposition)
+                            .drawWithContent {
+                                drawContent()
+                                val x = GUIDE_CELL_W.toPx() + ((nowState.longValue - winStart) / 60f * dpm).dp.toPx()
+                                if (x >= GUIDE_CELL_W.toPx() && x <= size.width) {
+                                    drawRect(Accent2.copy(alpha = 0.9f), topLeft = Offset(x - 1.dp.toPx(), 0f), size = Size(2.dp.toPx(), size.height))
+                                }
+                            }
                     ) {
                         itemsIndexed(shown) { i, ch ->
                             val cellReq = if (i == idx) focus else remember { FocusRequester() }
                             GuideRow(
-                                ch, ch.id == curId, { winStart }, viewMin, dpm, nowSec, rowH.dp, GuidePrefs.hidePast, cellReq,
+                                ch, numOf[ch.id] ?: -1, ch.id == curId, { winStart }, viewMin, dpm, nowState, rowH.dp, GuidePrefs.hidePast, cellReq,
                                 onInfo = { e -> infoE = e; infoItem = ch },
                                 onShift = { e -> shiftFor(e) },
                                 onRowFocus = { e -> rowFocus.value = e to ch; jumpScope.launch { holdJump(ls, i) } },
@@ -362,30 +434,46 @@ fun Guide(
 }
 }
 
-/** Opaque colors of the show fields (no transparency, see GuideRow). */
-private val BlockBase = Color(0xFF1C202B)
-private val BlockPast = Color(0xFF15181F)
-private val BlockLine = Color(0xFF2A2F3B)
+/** Opaque colors of the show fields (no transparency, see GuideRow). T-028: a touch of blue, in line with the navy background. */
+private val BlockBase = Color(0xFF1B2130)
+private val BlockPast = Color(0xFF131722)
+private val BlockLine = Color(0xFF283044)
+
+/** Width of the channel column of the grid (number, logo, name). */
+private val GUIDE_CELL_W = 224.dp
 
 /** A category on the left in the TV guide. */
 class GuideCat(val name: String, val items: List<Item>, val icon: AIcon?)
 
-/** Categories for the TV guide: current list (if different from all), all channels, favorites, own lists, groups. */
+/** Channel with known program data: loaded XMLTV, or EPG already fetched once (Xtream cache). */
+fun hasGuide(it: Item): Boolean = Xmltv.has(it.tvgId) || EpgFull.peek(it) != null
+
+/** Categories for the TV guide: current list, all channels, favorites, own lists, keyword collections, groups. */
 fun guideCategories(list: List<Item>, all: List<Item>): List<GuideCat> {
     val out = ArrayList<GuideCat>()
-    val allIds = all.size
-    if (list.size != allIds && list.isNotEmpty()) out.add(GuideCat("Aktuelle Liste", list, AIcon.Play))
-    out.add(GuideCat("Alle Sender", all, AIcon.Grid))
-    val byId = all.associateBy { it.id }
+    // "Guide only": every category shows only channels with known program data (empty rows disappear)
+    val allF = if (GuidePrefs.onlyWithGuide) all.filter(::hasGuide) else all
+    val listF = if (GuidePrefs.onlyWithGuide) list.filter(::hasGuide) else list
+    if (listF.size != allF.size && listF.isNotEmpty()) out.add(GuideCat("Aktuelle Liste", listF, AIcon.Play))
+    out.add(GuideCat("Alle Sender", allF, AIcon.Grid))
+    val byId = allF.associateBy { it.id }
     val favs = Library.favs.mapNotNull { byId[it] }
     if (favs.isNotEmpty()) out.add(GuideCat("Favoriten", favs, AIcon.Star))
     for (l in ChannelLists.lists.toList()) {
         val items = l.ids.mapNotNull { byId[it] }
         if (items.isNotEmpty()) out.add(GuideCat(l.name, items, AIcon.Lists))
     }
+    // Keyword collections (own sauce): channels matched by words in the name or the provider category.
+    // Cached folds: the first guide open shows no collections yet (cache still building),
+    // they appear once the background scan finishes (see the LaunchedEffect in Guide).
+    for (c in GuideCollections.list) {
+        val items = GuideCollectionLogic.itemsOfCached(c, allF, all)
+        if (items.isNotEmpty()) out.add(GuideCat("${c.emoji} ${c.name}".trim(), items, AIcon.Lists))
+    }
     val groups = LinkedHashMap<String, ArrayList<Item>>()
-    for (it in all) groups.getOrPut(it.group) { ArrayList() }.add(it)
-    if (groups.size > 1) for ((g, l) in groups) out.add(GuideCat(g, l, null))
+    for (it in allF) groups.getOrPut(it.group) { ArrayList() }.add(it)
+    // Canadian / Quebec groups first (e.g. "CA: Canada FR"), the rest in provider order
+    if (groups.size > 1) for (g in GuideCollectionLogic.pinnedFirst(groups.keys.toList())) out.add(GuideCat(g, groups.getValue(g), null))
     return out
 }
 
@@ -393,22 +481,24 @@ fun guideCategories(list: List<Item>, all: List<Item>): List<GuideCat> {
 private fun GuideCatRow(c: GuideCat, selected: Boolean, modifier: Modifier, onFocus: () -> Unit, onLeft: () -> Unit, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(DS.RadiusS)
+    // T-028: fixed height, light glass with a frame in the highlight color on focus, a short bar on the chosen category
     Row(
-        modifier.fillMaxWidth().clip(shape)
-            .background(if (f) RowFocus else if (selected) Accent1.copy(alpha = .18f) else Color.Transparent)
-            .border(if (f) DS.Border else 1.dp, if (f) Accent2 else if (selected) Accent1.copy(alpha = .55f) else Color.Transparent, shape)
+        modifier.fillMaxWidth().height(42.dp).clip(shape)
+            .background(if (f) Color(0x2EFFFFFF) else if (selected) Color(0x12FFFFFF) else Color.Transparent)
+            .then(if (f) Modifier.border(2.dp, Accent1, shape) else Modifier)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) onFocus() }
             // Left in the categories: close the guide (like Back)
             .onPreviewKeyEvent { ev -> if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionLeft) { onLeft(); true } else false }
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+            .padding(start = 6.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        Box(Modifier.width(3.dp).height(16.dp).clip(RoundedCornerShape(50)).background(if (selected) Accent1 else Color.Transparent))
         if (c.icon != null) AppIcon(c.icon, if (c.icon == AIcon.Star) DS.Gold else if (selected) Accent1 else Muted, size = 15.dp)
         // Provider names stay as they are; the app's own labels are translated
-        Text(c.name, color = Color.White, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        Text(c.name, color = if (selected || f) Tok.TextHi else Tok.TextMid, fontSize = 14.sp, fontWeight = if (selected || f) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), raw = c.icon == null || c.icon == AIcon.Lists)
-        Text(raw = true, text = c.items.size.toString(), color = Muted, fontSize = 13.sp)
+        Text(raw = true, text = c.items.size.toString(), color = Muted, fontSize = 12.sp, style = TNUM)
     }
 }
 
@@ -423,6 +513,105 @@ private fun GuideHint(key: String?, text: String, vararg keys: AIcon) {
             for (k in keys) AppIcon(k, Color.White, size = 14.dp)
         }
         Text(text, color = Muted, fontSize = 13.sp)
+    }
+}
+
+/**
+ * Manage the keyword collections of the guide (create / edit / delete).
+ * Same dialog pattern as NameDialog in LiveTab: full-screen scrim, centered card.
+ * Back closes the whole editor without saving (see the back step in Guide).
+ */
+@Composable
+private fun CollectionEditor(onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    GuideCollections.init(ctx)
+    var editing by remember { mutableStateOf<CollectionDef?>(null) }
+    var confirmDelete by remember { mutableStateOf<CollectionDef?>(null) }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(editing) { if (editing == null) { delay(100); runCatching { first.requestFocus() } } }
+    Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.width(680.dp).clip(RoundedCornerShape(DS.RadiusL)).background(Surf)
+                .border(1.dp, DS.Overlay3, RoundedCornerShape(DS.RadiusL)).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Sammlungen", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Eine Sammlung fasst Sender nach Stichwörtern zusammen – zum Beispiel alle Québec-Sender, egal in welcher Kategorie des Anbieters sie stehen. Ein Stichwort trifft, wenn ein Wort im Namen damit beginnt.", color = PT.T2, fontSize = 14.sp)
+            val ed = editing
+            if (ed != null) {
+                key(ed.id) {
+                    CollectionForm(ed,
+                        onSave = { def ->
+                            if (def.id == 0) GuideCollections.create(ctx, def) else GuideCollections.update(ctx, def)
+                            editing = null
+                        },
+                        onCancel = { editing = null })
+                }
+            } else {
+                if (GuideCollections.list.isEmpty()) Text("Keine Sammlungen", color = Muted, fontSize = 15.sp)
+                for (c in GuideCollections.list) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(raw = true, text = "${c.emoji} ${c.name}".trim(), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val kws = (c.nameKeywords + c.groupKeywords).joinToString(", ")
+                            if (kws.isNotEmpty()) Text(raw = true, text = kws, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        SmallPill("Bearbeiten") { editing = c }
+                        Box {
+                            SmallPill("Löschen") { confirmDelete = c }
+                            if (confirmDelete == c) OptionPopup(listOf("Löschen", "Abbrechen"), -1, { confirmDelete = null }) { i ->
+                                confirmDelete = null
+                                if (i == 0) GuideCollections.delete(ctx, c.id)
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PillButton("Neue Sammlung", Modifier.focusRequester(first), icon = AIcon.Plus) {
+                        editing = CollectionDef(0, "", "📺", emptyList(), emptyList(), 0)
+                    }
+                    PillButton("Fertig", light = true) { onClose() }
+                }
+            }
+        }
+    }
+}
+
+/** Edit one keyword collection: name, emoji, keywords for the channel name and the category, sort order. */
+@Composable
+private fun CollectionForm(def: CollectionDef, onSave: (CollectionDef) -> Unit, onCancel: () -> Unit) {
+    var name by remember { mutableStateOf(def.name) }
+    var emoji by remember { mutableStateOf(def.emoji) }
+    var nameKw by remember { mutableStateOf(def.nameKeywords.joinToString(", ")) }
+    var groupKw by remember { mutableStateOf(def.groupKeywords.joinToString(", ")) }
+    var sort by remember { mutableIntStateOf(def.sort) }
+    val nameReq = remember { FocusRequester() }
+    LaunchedEffect(Unit) { delay(100); runCatching { nameReq.requestFocus() } }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(name, { name = it.take(GuideCollectionLogic.MAX_NAME) }, "Name", inner = Modifier.focusRequester(nameReq))
+        Field(emoji, { emoji = it.take(6) }, "Emoji")
+        Field(nameKw, { nameKw = it.take(GuideCollectionLogic.MAX_KEYWORDS) }, "Stichwörter im Sendernamen")
+        Text("Stichwörter, getrennt durch Kommas", color = Muted, fontSize = 13.sp)
+        Field(groupKw, { groupKw = it.take(GuideCollectionLogic.MAX_KEYWORDS) }, "Stichwörter in der Kategorie")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            Text("Sortierung", color = Color.White, fontSize = 15.sp)
+            SmallPill(if (sort == 0) "Name" else "Nummer") { sort = (sort + 1) % 2 }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PillButton("Speichern", light = true) {
+                onSave(def.copy(
+                    name = GuideCollectionLogic.cleanName(name).ifEmpty { if (def.id == 0) "Neue Sammlung" else def.name },
+                    emoji = GuideCollectionLogic.cleanEmoji(emoji).ifEmpty { "📺" },
+                    nameKeywords = GuideCollectionLogic.cleanKeywords(nameKw),
+                    groupKeywords = GuideCollectionLogic.cleanKeywords(groupKw),
+                    sort = sort
+                ))
+            }
+            PillButton("Abbrechen") { onCancel() }
+        }
     }
 }
 
@@ -465,7 +654,10 @@ private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Mo
                 Text("·  ${(e.end - e.start) / 60} Min", color = PT.T2, fontSize = 13.sp, maxLines = 1)
                 if (Reminders.isSet(ch.id, e.start)) AppIcon(AIcon.Bell, Accent2, size = 14.dp)
             }
-            Text(raw = true, text = e.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ChannelLogoBadge(ch.logo, ch.title, 34.dp)
+                Text(raw = true, text = e.title, color = Tok.TextHi, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             if (isNow) {
                 val frac = ((nowSec - e.start).toFloat() / (e.end - e.start).coerceAtLeast(1)).coerceIn(0f, 1f)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -475,9 +667,27 @@ private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Mo
                     Text("noch ${((e.end - nowSec) / 60).coerceAtLeast(0)} Min", color = Accent2, fontSize = 13.sp, fontWeight = FontWeight.Bold, style = TNUM)
                 }
             }
-            // The whole width belongs to the description (the "Next shows" column was dropped at the user's request)
-            if (e.desc.isNotBlank()) Text(raw = true, text = e.desc, color = DS.TextSoft, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.weight(1f))
+            // The whole width belongs to the description (the "Next shows" column was dropped at the user's request).
+            // T-028: as many whole lines as fit into the room left, the last one ends with "…" instead of being cut through.
+            if (e.desc.isNotBlank()) {
+                val lineDp = with(LocalDensity.current) { 19.sp.toDp().value }
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    Text(
+                        raw = true, text = e.desc, color = DS.TextSoft, fontSize = 14.sp, lineHeight = 19.sp,
+                        maxLines = GuideGridLogic.linesThatFit(maxHeight.value, lineDp), overflow = TextOverflow.Ellipsis
+                    )
+                }
+            } else Spacer(Modifier.weight(1f))
+        }
+        // Picture of the show from the XMLTV feed, if any (lazy load: only the shown show fetches its image)
+        val icon = e?.icon
+        if (icon != null) {
+            Box(
+                Modifier.fillMaxHeight().width(220.dp).clip(RoundedCornerShape(DS.RadiusS)).background(DS.Overlay2),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(icon, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
         }
     }
 }
@@ -494,7 +704,7 @@ private fun guideOkAction(e: EpgEntry?, ch: Item?, nowSec: Long): String {
 
 @Composable
 private fun GuideRow(
-    ch: Item, current: Boolean, winStart: () -> Long, viewMin: Int, dpm: Float, nowSec: Long, rowH: Dp, hidePast: Boolean,
+    ch: Item, num: Int, current: Boolean, winStart: () -> Long, viewMin: Int, dpm: Float, now: LongState, rowH: Dp, hidePast: Boolean,
     cellReq: FocusRequester, onInfo: (EpgEntry?) -> Unit, onShift: (EpgEntry) -> Unit, onRowFocus: (EpgEntry?) -> Unit,
     onBlock: (Boolean, FocusRequester) -> Unit, onClose: () -> Unit, onArchive: (EpgEntry) -> Unit, onPick: () -> Unit
 ) {
@@ -511,10 +721,14 @@ private fun GuideRow(
         while (LiveHold.active()) delay(120)
         value = EpgFull.get(ch)
     }
-    // "Hide past" leaves shows in the archive: they can still be watched
+    // "Hide past" leaves shows in the archive: they can still be watched. T-028: fillers under 2 minutes are left out (slivers).
+    // "Now" is read without subscribing: the list is rebuilt with its data, not every 30 s.
     val entries = remember(raw, hidePast, cu) {
-        cleanEpg(raw.orEmpty()).let { l -> if (hidePast) l.filter { it.end > nowSec || CatchupLogic.canPlay(cu, it.start, it.end, nowSec) } else l }
+        val nowSec = Snapshot.withoutReadObservation { now.longValue }
+        GuideGridLogic.visible(cleanEpg(raw.orEmpty()), { it.start }, { it.end })
+            .let { l -> if (hidePast) l.filter { it.end > nowSec || CatchupLogic.canPlay(cu, it.start, it.end, nowSec) } else l }
     }
+    val shortTitle = remember(ch.title) { QcLineupLogic.stripPrefix(ch.title).ifBlank { ch.title } }
     val blockReqs = remember(entries) { HashMap<Long, FocusRequester>() }
     // The time window is read as a lambda: moving it only shifts the row content (placement), the shows are not recomposed.
     // Which shows exist in the row changes only when the window crosses a full hour.
@@ -526,9 +740,9 @@ private fun GuideRow(
         var f by remember { mutableStateOf(false) }
         val shape = RoundedCornerShape(DS.RadiusS)
         Row(
-            Modifier.focusRequester(cellReq).width(208.dp).fillMaxHeight().padding(end = 8.dp).clip(shape)
-                .background(if (f) Accent1.copy(alpha = .30f) else if (current) DS.Overlay2 else Color(0x12FFFFFF))
-                .border(if (f) DS.Border else 1.dp, if (f) Accent1 else Color(0x0FFFFFFF), shape)
+            Modifier.focusRequester(cellReq).width(GUIDE_CELL_W).fillMaxHeight().padding(end = 8.dp).clip(shape)
+                .background(if (f) Color(0x2EFFFFFF) else if (current) Accent1.copy(alpha = .14f) else Color(0x12FFFFFF))
+                .border(if (f) DS.Border else 1.dp, if (f) Accent1 else if (current) Accent1.copy(alpha = .45f) else Color(0x0FFFFFFF), shape)
                 .onFocusChanged {
                     f = it.isFocused
                     if (it.isFocused) {
@@ -540,15 +754,15 @@ private fun GuideRow(
                     if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionLeft) { onClose(); true } else false
                 }
                 .clickable(onClick = onPick)
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(start = 6.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(Modifier.size(38.dp).clip(RoundedCornerShape(DS.RadiusXs)).background(DS.Overlay2), contentAlignment = Alignment.Center) {
-                if (ch.logo != null) AsyncImage(ch.logo, null, Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
-            }
+            // T-028: channel number (same as Live TV), logo or monogram, name without the provider prefix ("CA: ")
+            Text(raw = true, text = if (num > 0) "$num" else "", color = if (current) Accent1 else Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, style = TNUM, maxLines = 1, modifier = Modifier.width(38.dp))
+            ChannelLogoBadge(ch.logo, ch.title, 38.dp)
             Text(
-                ch.title, color = Color.White, fontSize = 14.sp,
-                fontWeight = if (current || f) FontWeight.ExtraBold else FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis
+                raw = true, text = shortTitle, color = Tok.TextHi, fontSize = 14.sp,
+                fontWeight = if (current || f) FontWeight.ExtraBold else FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 17.sp
             )
         }
         Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
@@ -561,26 +775,38 @@ private fun GuideRow(
             shown.forEach { e ->
                 key(e.start) {
                     val x = (e.start - origin) / 60f * dpm
-                    val w = ((e.end - e.start) / 60f * dpm - 3f).coerceIn(3f, 6000f)
-                    val isNow = nowSec >= e.start && nowSec < e.end
-                    val past = e.end <= nowSec
+                    val w = GuideGridLogic.blockWidth(e.end - e.start, dpm)
+                    // 0 = later, 1 = now, 2 = past: the block recomposes only when this changes, not on every new "now"
+                    val phase by remember(e.start, e.end) {
+                        androidx.compose.runtime.derivedStateOf { val n = now.longValue; if (n >= e.end) 2 else if (n >= e.start) 1 else 0 }
+                    }
+                    val isNow = phase == 1
+                    val past = phase == 2
                     var bf by remember { mutableStateOf(false) }
                     val reminded = Reminders.isSet(ch.id, e.start)
-                    val inArchive = past && CatchupLogic.canPlay(cu, e.start, e.end, nowSec)
+                    val inArchive = remember(phase, cu) { past && CatchupLogic.canPlay(cu, e.start, e.end, Snapshot.withoutReadObservation { now.longValue }) }
                     val dw = if (bf) maxOf(w, 200f) else w
-                    val frac = if (isNow) ((nowSec - e.start).toFloat() / (e.end - e.start)).coerceIn(0f, 1f) else 0f
                     val req = blockReqs.getOrPut(e.start) { FocusRequester() }
-                    val blockShape = RoundedCornerShape(DS.RadiusS)
+                    val blockShape = RoundedCornerShape(GuideGridLogic.blockRadius(dw, DS.RadiusXs.value).dp)
+                    val barColor = if (bf) Color.White else Accent1
                     Box(
                         Modifier.offset(x = x.dp).zIndex(if (bf) 2f else 0f).width(dw.dp).fillMaxHeight().clip(blockShape)
                             .then(
                                 // All fields opaque (round 14): the selected show becomes wider and lies over its neighbors –
                                 // semi-transparent, the texts of short shows would overlap
-                                if (bf) Modifier.background(Brush.horizontalGradient(listOf(lerp(BlockBase, Accent1, .62f), lerp(BlockBase, Accent1, .42f))))
-                                else if (isNow) Modifier.background(lerp(BlockBase, Accent1, .16f))
+                                // T-028: a calmer focus (before 62 % accent under white text, hard to read with light accents)
+                                if (bf) Modifier.background(Brush.horizontalGradient(listOf(lerp(BlockBase, Accent1, .34f), lerp(BlockBase, Accent1, .20f))))
+                                else if (isNow) Modifier.background(lerp(BlockBase, Accent1, .14f))
                                 else Modifier.background(if (past && !inArchive) BlockPast else BlockBase)
                             )
-                            .border(if (bf) 2.dp else 1.dp, if (bf) Accent1 else if (isNow) lerp(BlockBase, Accent1, .40f) else BlockLine, blockShape)
+                            // Progress of the running show along the bottom edge, drawn from "now" in the draw phase
+                            .then(if (isNow) Modifier.drawBehind {
+                                val n = now.longValue
+                                val fr = ((n - e.start).toFloat() / (e.end - e.start).coerceAtLeast(1)).coerceIn(0f, 1f)
+                                val h = 3.dp.toPx()
+                                drawRect(barColor, topLeft = Offset(0f, size.height - h), size = Size(size.width * fr, h))
+                            } else Modifier)
+                            .then(if (dw >= 12f || bf) Modifier.border(if (bf) 2.dp else 1.dp, if (bf) Accent1 else if (isNow) lerp(BlockBase, Accent1, .40f) else BlockLine, blockShape) else Modifier)
                             .focusRequester(req)
                             .onPreviewKeyEvent { ev ->
                                 // Seek keys: one day back/forward (quickly to older shows in the archive)
@@ -630,28 +856,26 @@ private fun GuideRow(
                                 else if (e.end <= n && CatchupLogic.canPlay(cu, e.start, e.end, n)) onArchive(e)
                                 else onPick()
                             }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .padding(horizontal = if (dw >= 24f) 8.dp else 0.dp, vertical = 4.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         if (reminded) AppIcon(AIcon.Bell, if (bf) Color.White else Accent2, Modifier.align(Alignment.TopEnd), 13.dp)
                         if (inArchive && dw >= 30f) AppIcon(AIcon.Catchup, if (bf) Color.White else Accent2, Modifier.align(Alignment.TopEnd), 13.dp)
                         // Design: title on top, time below
-                        if (dw >= 44f) Column {
+                        if (dw >= 44f) Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             if (dw >= 72f) Text(
-                                e.title, color = if (past && !inArchive && !bf) Color(0xFF9AA0B2) else Color.White,
-                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, raw = true
+                                e.title, color = if (past && !inArchive && !bf) Color(0xFF9AA0B2) else Tok.TextHi,
+                                fontSize = 13.sp, fontWeight = if (isNow || bf) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, raw = true
                             )
                             Text(
                                 raw = true, text = hhmm(e.start) + " – " + hhmm(e.end), color = if (bf) Color(0xE6FFFFFF) else Muted,
-                                fontSize = 13.sp, style = TNUM, maxLines = 1
+                                fontSize = 12.sp, style = TNUM, maxLines = 1
                             )
                         }
-                        if (isNow) Box(Modifier.align(Alignment.BottomStart).height(3.dp).width((dw * frac).dp).background(if (bf) Color.White else Accent1))
                     }
                 }
             }
-            // "Now" line: moves with the row content, the clipping hides it outside the window
-            Box(Modifier.offset(x = ((nowSec - origin) / 60f * dpm).dp).width(2.dp).fillMaxHeight().background(Accent2.copy(alpha = 0.8f)))
+            // T-028: the "now" line is drawn once over the whole grid (see Guide), no longer one box per row
             }
         }
     }

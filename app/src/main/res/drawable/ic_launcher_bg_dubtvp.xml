@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- T-031: DubTvP app icon background: dark spun titanium with the red light of the glass. The picture is made by
+     docs/brand/compose_assets.py and lives in drawable-nodpi; this wrapper keeps the adaptive-icon files unchanged. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_launcher_bg_dubtvp_spun"
+    android:gravity="fill" />

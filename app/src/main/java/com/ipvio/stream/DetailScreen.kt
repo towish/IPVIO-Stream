@@ -88,8 +88,10 @@ fun DetailScreen(
 ) {
     val ctx = LocalContext.current
     var tryNo by remember(item.id) { mutableIntStateOf(0) }
+    // New-release titles are not in the playlist: info only, no dead Play button and no library buttons
+    val infoOnly = NewReleases.isNewRelease(item)
     // Cinema preview without buttons (info only) does not need the episodes
-    val need = LazySeries.isStub(item) && showActions
+    val need = LazySeries.isStub(item) && showActions && !infoOnly
     var full by remember(item.id) { mutableStateOf(LazySeries.full(item).takeIf { it !== item }) }
     var failed by remember(item.id) { mutableStateOf(false) }
     if (need && full == null) {
@@ -123,7 +125,7 @@ fun DetailScreen(
     }
     DetailScreenFull(
         if (need) full ?: item else item, all, onPlay, onPerson, onOpenItem, onBack,
-        embedded, autoFocus, onTopUp, showActions
+        embedded, autoFocus, onTopUp, showActions && !infoOnly
     )
 }
 
@@ -253,6 +255,11 @@ private fun DetailScreenFull(
     }
 
     val playFocus = remember { FocusRequester() }
+    // Web sources (Streambert-style aggregators): picker target, then the running web player
+    var srcTarget by remember { mutableStateOf<WebSources.Target?>(null) }
+    // TMDB series without playlist episodes: season/episode picker in front of the source picker
+    var epPick by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var webPlay by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Back from a person or a similar title: go back there, not to "Resume"
     var topMoreFocused by remember { mutableStateOf(false) }
     var topRowFocused by remember { mutableStateOf(false) }
@@ -523,6 +530,20 @@ private fun DetailScreenFull(
                                 HeroButton(if (fav) "Favorit" else "Zu Favoriten", if (fav) AIcon.HeartFilled else AIcon.Heart, false, Modifier, bh) { Library.toggleFav(ctx, item.id) }
                                 HeroButton("Trailer", AIcon.Play, false, Modifier, bh) { openTrailer(ctx, meta?.trailerKey, item.title) }
                                 HeroButton("Extern", AIcon.External, false, Modifier, bh) { playUrl?.let { openExternal(ctx, it, item.title) } }
+                                // Web sources (Streambert-style, keyed by TMDB id): movies directly; a series starts
+                                // with the episode Play would start (current season, its first episode, TMDB numbering)
+                                val wsTmdb = tmdbId ?: 0
+                                if (wsTmdb > 0 && (item.kind == Kind.MOVIE || item.kind == Kind.SERIES)) {
+                                    HeroButton("Web-Quellen", AIcon.Play, false, Modifier, bh) {
+                                        srcTarget = if (item.kind == Kind.SERIES) {
+                                            val g = group
+                                            val s = (g?.tmdbSeason ?: season).coerceAtLeast(1)
+                                            val e = (if (g != null) EpisodeLogic.tmdbNum(g, eps.firstOrNull()?.num ?: 1)
+                                            else eps.firstOrNull()?.num ?: 1).coerceAtLeast(1)
+                                            WebSources.Target(item.title, wsTmdb, s, e)
+                                        } else WebSources.Target(item.title, wsTmdb, 0, 0)
+                                    }
+                                }
                             }
                             // Watched by hand: movie, season, whole series (also reachable per episode: long OK / menu key on the row)
                             Row(horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
@@ -611,6 +632,39 @@ private fun DetailScreenFull(
                             }
                         }
                         }
+                    // New releases and TMDB search hits: open the title directly in its streaming app
+                    // (the title is not in the playlist); the web sources work for movies directly and
+                    // for series through the season/episode picker
+                    if (NewReleases.isNewRelease(item)) {
+                        val svc = StreamLaunch.serviceFor(item)
+                        val nrTmdb = WebSources.tmdbIdOf(item)
+                        val nrMovie = nrTmdb > 0 && item.kind == Kind.MOVIE
+                        val nrSeries = nrTmdb > 0 && item.kind == Kind.SERIES
+                        if (svc != null || nrMovie || nrSeries) {
+                            Spacer(Modifier.height(4.dp))
+                            Row(Modifier.offset(x = (-8).dp).padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
+                                if (svc != null) {
+                                    HeroButton(Lang.tr("Auf {0} ansehen").replace("{0}", svc.name), AIcon.Play, true,
+                                        Modifier.focusRequester(playFocus), 44) {
+                                        scope.launch { StreamLaunch.open(ctx, item) }
+                                    }
+                                }
+                                if (nrMovie) {
+                                    HeroButton("Web-Quellen", AIcon.Play, svc == null,
+                                        if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
+                                        srcTarget = WebSources.Target(item.title, nrTmdb, 0, 0)
+                                    }
+                                }
+                                if (nrSeries) {
+                                    HeroButton("Web-Quellen", AIcon.Play, svc == null,
+                                        if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
+                                        epPick = item.title to nrTmdb
+                                    }
+                                }
+                            }
+                        }
+                    }
                     }
                 }
             }
@@ -730,6 +784,20 @@ private fun DetailScreenFull(
                     color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 32.dp))
             }
         }
+    }
+    // Web sources: picker and web player are dialogs over the detail page
+    srcTarget?.let { t ->
+        WebSourcePicker(t, onPick = { url -> srcTarget = null; webPlay = url to t.title }, onClose = { srcTarget = null })
+    }
+    epPick?.let { (t, id) ->
+        TmdbEpisodePicker(t, id, onPick = { target -> epPick = null; srcTarget = target }, onClose = { epPick = null })
+    }
+    webPlay?.let { wp ->
+        WebPlayerScreen(
+            wp.first, wp.second,
+            onNative = { f -> webPlay = null; onPlay(f.url, wp.second, 0L) },
+            onClose = { webPlay = null }
+        )
     }
 }
 

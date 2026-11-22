@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +41,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -53,6 +60,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 // Shared building blocks of the Sports Hub. They only use the existing design system
 // (DS, Tok, Accent1/2, Muted, PT.Live, FilterPill, HeroButton, EmptyState, Spinner, focusGlow, focusScale).
@@ -196,7 +204,7 @@ internal fun MatchStatus(g: SportData.Game, big: Boolean = false) {
 @Composable
 internal fun HubSectionTitle(text: String, raw: Boolean = false, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, color = Tok.TextHi, fontSize = spx(21), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), raw = raw)
+        Text(text, color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), raw = raw)
         if (action != null && onAction != null) FilterPill(action, false, Modifier.trackFocus(), aicon = AIcon.Right) { onAction() }
     }
 }
@@ -226,7 +234,7 @@ internal fun FRow(
             .onFocusChanged { f = it.isFocused }
             .then(if (req != null) Modifier.trackFocus(req) else Modifier.trackFocus())
             .combinedClickable(onClick = onClick, onLongClick = onLong)
-            .padding(horizontal = dpx(12), vertical = dpx(8)),
+            .padding(horizontal = dpx(12), vertical = dpx(5)),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12)), content = content
     )
 }
@@ -278,30 +286,64 @@ internal fun TeamName(t: SportData.Team, state: Int, modifier: Modifier, end: Bo
     }
 }
 
-/** Card for horizontal rows (Live now, Upcoming). Field events show the leaders instead of two teams. */
+/** Emoji per sport, for the section headers of the overview (same style as the guide collections). */
+internal fun sportEmoji(key: String): String = when (key) {
+    "soccer" -> "⚽"
+    "basketball" -> "🏀"
+    "nfl" -> "🏈"
+    "nhl" -> "🏒"
+    "chl" -> "🏒"
+    "tennis" -> "🎾"
+    "f1" -> "🏎️"
+    "mlb" -> "⚾"
+    "ufc" -> "🥊"
+    "cricket" -> "🏏"
+    "golf" -> "⛳"
+    else -> "🏆"
+}
+
+/** Header of one sport inside a section (live / upcoming / results): emoji, German name, game count. */
+@Composable
+internal fun SportGroupHeader(sport: SportData.Sport, live: Int, total: Int) {
+    Row(Modifier.fillMaxWidth().padding(start = dpx(4), end = dpx(4)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
+        Text(raw = true, text = sportEmoji(sport.key), fontSize = spx(20))
+        Text(Lang.tr(sport.label), color = Tok.TextHi, fontSize = spx(18), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+        if (live > 0) Text("LIVE", color = PT.Live, fontSize = spx(14), fontWeight = FontWeight.ExtraBold)
+        Text(if (total == 1) "1 Spiel" else "$total Spiele", color = Muted, fontSize = spx(14))
+    }
+}
+
+/**
+ * Compact card for the overview rows (Live now, Upcoming, Results): big logos and the score only, no team names –
+ * the teams are known by their logos. About 7 cards fit per row instead of 4, so two to three times more
+ * results are visible. Field events show the leader instead of two teams.
+ */
 @Composable
 internal fun MatchCard(g: SportData.Game, hasChan: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    HubCardBox(modifier.width(dpx(330)), onClick = onClick) {
+    HubCardBox(modifier.width(dpx(190)), onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { MatchStatus(g) }
             if (SportHubFavs.isFavGame(g)) AppIcon(AIcon.Star, DS.Gold, size = dpx(18))
         }
         Text(raw = true, text = listOf(g.groupName, g.note).filter { it.isNotBlank() }.distinct().joinToString(" · "), color = Muted, fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (g.solo) {
-            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            g.field.take(3).forEach { e ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
-                    Text(raw = true, text = e.pos, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(28)))
-                    TeamLogo(e.flag, "", dpx(20))
-                    Text(raw = true, text = e.name, color = Tok.TextHi, fontSize = spx(14), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (e.value.isNotBlank()) Text(raw = true, text = e.value, color = Tok.TextHi, fontSize = spx(14), fontWeight = FontWeight.Bold)
+            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(16), fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val lead = g.field.firstOrNull()
+            if (lead != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {
+                Text(raw = true, text = lead.pos, color = Accent2, fontSize = spx(14), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(28)))
+                TeamLogo(lead.flag, "", dpx(20))
+                Text(raw = true, text = lead.name, color = Tok.TextHi, fontSize = spx(14), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (lead.value.isNotBlank()) Text(raw = true, text = lead.value, color = Tok.TextHi, fontSize = spx(14), fontWeight = FontWeight.Bold)
+            } else Text("Noch keine Ergebnisse", color = Muted, fontSize = spx(13))
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Top) {
+                listOf(g.home, g.away).forEach { t ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(4))) {
+                        TeamLogo(t.logo, t.abbr, dpx(64))
+                        val dim = g.state == 2 && !t.winner && t.score != null
+                        Text(raw = true, text = t.score ?: "–", color = if (dim) Muted else Tok.TextHi, fontSize = spx(if ((t.score?.length ?: 0) > 6) 13 else 22), fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    }
                 }
-            }
-            if (g.field.isEmpty()) Text("Noch keine Ergebnisse", color = Muted, fontSize = spx(13))
-        } else listOf(g.home, g.away).forEach { t ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
-                TeamName(t, g.state, Modifier.weight(1f))
-                Text(raw = true, text = t.score ?: "", color = Tok.TextHi, fontSize = spx(if ((t.score?.length ?: 0) > 6) 13 else 20), fontWeight = FontWeight.ExtraBold, maxLines = 1)
             }
         }
         if (hasChan) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(6))) {
@@ -447,18 +489,98 @@ internal fun MBtn(text: String, modifier: Modifier = Modifier, onClick: () -> Un
 internal fun LazyListScope.statisticsItems(stats: List<SportMatch.Stat>) {
     items(stats.size) { i ->
         val s = stats[i]
+        val a = s.home.removeSuffix("%").toFloatOrNull()
+        val b = s.away.removeSuffix("%").toFloatOrNull()
+        // The leader stands out (accent + extra bold), the other side steps back; ties and text values stay neutral
+        val lead = if (a != null && b != null && a != b) if (a > b) 1 else -1 else 0
         FRow {
-            Text(raw = true, text = s.home, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(110)))
+            Text(raw = true, text = s.home, color = if (lead == 1) Accent2 else if (lead == -1) Muted else Tok.TextHi,
+                fontSize = spx(12.5), fontWeight = if (lead == 1) FontWeight.ExtraBold else FontWeight.Bold, modifier = Modifier.width(dpx(84)))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(raw = true, text = s.label, color = Muted, fontSize = spx(15), textAlign = TextAlign.Center)
-                val a = s.home.removeSuffix("%").toFloatOrNull()
-                val b = s.away.removeSuffix("%").toFloatOrNull()
-                if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(4)).height(dpx(6)).clip(RoundedCornerShape(50))) {
+                Text(raw = true, text = s.label, color = Muted, fontSize = spx(11.5), textAlign = TextAlign.Center)
+                if (a != null && b != null && a + b > 0f) Row(Modifier.fillMaxWidth().padding(top = dpx(2)).height(dpx(4)).clip(RoundedCornerShape(50))) {
                     Box(Modifier.weight(maxOf(a, 0.01f)).fillMaxHeight().background(Accent2))
                     Box(Modifier.weight(maxOf(b, 0.01f)).fillMaxHeight().background(DS.Overlay4))
                 }
             }
-            Text(raw = true, text = s.away, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(110)))
+            Text(raw = true, text = s.away, color = if (lead == -1) Accent2 else if (lead == 1) Muted else Tok.TextHi,
+                fontSize = spx(12.5), fontWeight = if (lead == -1) FontWeight.ExtraBold else FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(dpx(84)))
+        }
+    }
+}
+
+/** Win probability over the game (ESPN, team sports with data): line + area, 50% reference. */
+@Composable
+internal fun WinProbChart(probs: List<Float>, homeShort: String, awayShort: String) {
+    if (probs.size < 2) return
+    val last = probs.last().coerceIn(0f, 1f)
+    val homePct = (last * 100f).roundToInt()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(raw = true, text = homeShort + " " + homePct + "%", color = Accent2, fontSize = spx(13.5), fontWeight = FontWeight.Bold)
+        Text(raw = true, text = "50%", color = Muted, fontSize = spx(12))
+        Text(raw = true, text = awayShort + " " + (100 - homePct) + "%", color = Tok.TextHi, fontSize = spx(13.5), fontWeight = FontWeight.Bold)
+    }
+    Canvas(Modifier.fillMaxWidth().height(dpx(92))) {
+        val w = size.width
+        val h = size.height
+        fun y(p: Float) = h * (1f - p.coerceIn(0f, 1f))
+        fun x(i: Int) = if (probs.size > 1) w * i.toFloat() / (probs.size - 1).toFloat() else 0f
+        drawLine(Muted, Offset(0f, h / 2f), Offset(w, h / 2f), strokeWidth = 1f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f))
+        val line = Path().apply {
+            moveTo(0f, y(probs[0]))
+            for (i in 1 until probs.size) lineTo(x(i), y(probs[i]))
+        }
+        val area = Path().apply {
+            addPath(line)
+            lineTo(w, h)
+            lineTo(0f, h)
+            close()
+        }
+        drawPath(area, Accent2.copy(alpha = 0.15f))
+        drawPath(line, Accent2, style = Stroke(width = 5f))
+        drawCircle(Accent2, radius = 7f, center = Offset(x(probs.size - 1), y(probs.last())))
+    }
+}
+
+/** Shot chart on the rink (NHL): home shots orange, away shots blue, goals gold with a white ring. ESPN coordinates: x -100..100, y -42.5..42.5. */
+@Composable
+internal fun RinkChart(shots: List<SportMatch.Shot>) {
+    val homeC = Color(0xFFFF7A1A)
+    val awayC = Color(0xFF4F9CF9)
+    val gold = Color(0xFFFFD166)
+    Canvas(Modifier.fillMaxWidth().aspectRatio(200f / 85f)) {
+        val w = size.width
+        val h = size.height
+        val cr = CornerRadius(h * 0.16f, h * 0.16f)
+        drawRoundRect(Color(0xFF0B1526), cornerRadius = cr)
+        drawRoundRect(Color(0xFF33507E), cornerRadius = cr, style = Stroke(width = 2f))
+        // Lines: centre (red), blue lines at 75 ft from each goal line
+        drawLine(DS.Danger.copy(alpha = 0.75f), Offset(w / 2f, 0f), Offset(w / 2f, h), strokeWidth = 2.5f)
+        drawLine(awayC.copy(alpha = 0.55f), Offset(w * 0.375f, 0f), Offset(w * 0.375f, h), strokeWidth = 4f)
+        drawLine(awayC.copy(alpha = 0.55f), Offset(w * 0.625f, 0f), Offset(w * 0.625f, h), strokeWidth = 4f)
+        // Faceoff circles and centre circle
+        val fr = w * 15f / 200f
+        for ((fx, fy) in listOf(0.155f to 0.26f, 0.155f to 0.74f, 0.845f to 0.26f, 0.845f to 0.74f, 0.5f to 0.5f)) {
+            drawCircle(DS.Danger.copy(alpha = if (fx == 0.5f) 0f else 0.5f), radius = fr, center = Offset(w * fx, h * fy), style = Stroke(width = 1.5f))
+        }
+        drawCircle(awayC.copy(alpha = 0.7f), radius = fr, center = Offset(w / 2f, h / 2f), style = Stroke(width = 1.5f))
+        // Creases
+        drawRoundRect(awayC.copy(alpha = 0.30f), topLeft = Offset(w * 0.02f, h * 0.40f), size = androidx.compose.ui.geometry.Size(w * 0.035f, h * 0.20f), cornerRadius = CornerRadius(4f, 4f))
+        drawRoundRect(awayC.copy(alpha = 0.30f), topLeft = Offset(w * 0.945f, h * 0.40f), size = androidx.compose.ui.geometry.Size(w * 0.035f, h * 0.20f), cornerRadius = CornerRadius(4f, 4f))
+        // Shots: plain attempts first, goals on top
+        for (s in shots) {
+            if (s.goal) continue
+            val cx = (s.x + 100f) / 200f * w
+            val cy = (42.5f - s.y) / 85f * h
+            drawCircle((if (s.home) homeC else awayC).copy(alpha = 0.85f), radius = 5f, center = Offset(cx, cy))
+        }
+        for (s in shots) {
+            if (!s.goal) continue
+            val cx = (s.x + 100f) / 200f * w
+            val cy = (42.5f - s.y) / 85f * h
+            drawCircle(Color.White, radius = 9.5f, center = Offset(cx, cy))
+            drawCircle(gold, radius = 7f, center = Offset(cx, cy))
         }
     }
 }
@@ -469,9 +591,9 @@ internal fun LazyListScope.timelineItems(events: List<SportMatch.Ev>, max: Int =
     items(list.size) { i ->
         val e = list[i]
         FRow {
-            Text(raw = true, text = e.time, color = Accent2, fontSize = spx(16), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(80)))
+            Text(raw = true, text = e.time, color = Accent2, fontSize = spx(12), fontWeight = FontWeight.Bold, modifier = Modifier.width(dpx(62)))
             EventMark(e.type)
-            Text(raw = true, text = e.text, color = if (e.goal) Tok.TextHi else Tok.TextMid, fontSize = spx(16),
+            Text(raw = true, text = e.text, color = if (e.goal) Tok.TextHi else Tok.TextMid, fontSize = spx(12.5),
                 fontWeight = if (e.goal) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
         }
     }
@@ -537,31 +659,31 @@ internal fun MatchHeader(g: SportData.Game, logo: Int = 96) {
     if (g.solo) {
         Column(verticalArrangement = Arrangement.spacedBy(dpx(6))) {
             MatchStatus(g, big = true)
-            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(34), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(raw = true, text = listOf(g.note, g.venue).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(16))
+            Text(raw = true, text = g.title, color = Tok.TextHi, fontSize = spx(27), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(raw = true, text = listOf(g.note, g.venue).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = spx(13.5))
         }
         return
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(20))) {
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(8))) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(5))) {
             TeamLogo(g.home.logo, g.home.abbr, dpx(logo))
-            Text(raw = true, text = g.home.name, color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            g.home.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(14)) }
+            Text(raw = true, text = g.home.name, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            g.home.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(12)) }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(6))) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(4))) {
             MatchStatus(g, big = true)
             val long = (g.home.score?.length ?: 0) > 6 || (g.away.score?.length ?: 0) > 6
             if (long) {
-                Text(raw = true, text = g.home.score ?: "", color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.ExtraBold)
-                Text(raw = true, text = g.away.score ?: "", color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.ExtraBold)
-            } else Text(raw = true, text = if (g.state == 0) hhmm(g.start) else scoreLine(g), color = Tok.TextHi, fontSize = spx(54), fontWeight = FontWeight.ExtraBold)
+                Text(raw = true, text = g.home.score ?: "", color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.ExtraBold)
+                Text(raw = true, text = g.away.score ?: "", color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.ExtraBold)
+            } else Text(raw = true, text = if (g.state == 0) hhmm(g.start) else scoreLine(g), color = Tok.TextHi, fontSize = spx(40), fontWeight = FontWeight.ExtraBold)
             val info = listOf(if (g.state == 0) dayLabel(g.start) else "", g.venue).filter { it.isNotBlank() }.joinToString(" · ")
-            if (info.isNotBlank()) Text(raw = true, text = info, color = Muted, fontSize = spx(15), maxLines = 1)
+            if (info.isNotBlank()) Text(raw = true, text = info, color = Muted, fontSize = spx(13), maxLines = 1)
         }
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(8))) {
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(dpx(5))) {
             TeamLogo(g.away.logo, g.away.abbr, dpx(logo))
-            Text(raw = true, text = g.away.name, color = Tok.TextHi, fontSize = spx(20), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            g.away.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(14)) }
+            Text(raw = true, text = g.away.name, color = Tok.TextHi, fontSize = spx(17), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            g.away.record?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(12)) }
         }
     }
 }
@@ -570,5 +692,5 @@ internal fun MatchHeader(g: SportData.Game, logo: Int = 96) {
 internal fun featuredBrush(g: SportData.Game): Brush {
     val a = teamColor(g.home.color) ?: Accent1
     val b = teamColor(g.away.color) ?: Accent2
-    return Brush.horizontalGradient(listOf(a.copy(alpha = 0.30f), Tok.Card, b.copy(alpha = 0.30f)))
+    return Brush.horizontalGradient(listOf(a.copy(alpha = 0.45f), Tok.Card, b.copy(alpha = 0.45f)))
 }

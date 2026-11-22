@@ -43,8 +43,8 @@ fun epgZone(): TimeZone = General.zone()
 /** Clock time in the chosen format (24 h / 12 h) and in the chosen time zone. The formatters are reused per thread. */
 fun hhmm(sec: Long): String = fmt(SettingsLogic.timePattern(General.timeFmt, General.sys24)).format(Date(sec * 1000))
 
-/** Day "Mo 19.10." in the chosen time zone and language. */
-fun dayLabel(sec: Long): String = fmt("EE dd.MM.").format(Date(sec * 1000))
+/** Day in the chosen time zone and language, in that language's order ("Mo. 19.10.", "lun. 19 oct.", "Mon Oct 19"; T-028). */
+fun dayLabel(sec: Long): String = fmt(GuideGridLogic.dayPattern(Lang.code())).format(Date(sec * 1000))
 
 /** Shared network access for program info: one client (connections are reused) and at most 6 requests at the same time. */
 object EpgNet {
@@ -79,7 +79,7 @@ object Xmltv {
 
     /**
      * Loads the XMLTV program for the visible channels (hidden languages do not even arrive).
-     * Only what is needed is stored: window −1 h to +36 h, at most 80 shows per channel, description shortened,
+     * Only what is needed is stored: window −1 h to +36 h, at most 80 shows per channel, full description,
      * equal titles only once. If memory gets tight, parsing stops and keeps what has been read so far.
      */
     /** [delayMs]: at app start the guide waits a little so the home screen and the playlist get the CPU first. */
@@ -118,11 +118,7 @@ object Xmltv {
     private fun parseTime(s: String?): Long? = xmltvTime(s)
 
     private const val MAX_PER_CHANNEL = 80
-    private const val MAX_DESC = 400
     @Volatile private var truncated = false
-
-    private fun shortDesc(d: String): String =
-        if (d.length <= MAX_DESC) d else d.substring(0, d.lastIndexOf(' ', MAX_DESC).takeIf { it > MAX_DESC / 2 } ?: MAX_DESC) + " …"
 
     private fun parse(url: String, wanted: Set<String>, out: HashMap<String, MutableList<EpgEntry>>, past: Map<String, Int> = emptyMap()) {
         client.newCall(Request.Builder().url(url).build()).execute().use { r ->
@@ -146,11 +142,14 @@ object Xmltv {
                     val e = parseTime(p.getAttributeValue(null, "stop"))
                     var title = ""
                     var desc = ""
+                    var icon = ""
                     var inner = p.next()
                     while (!(inner == XmlPullParser.END_TAG && p.name == "programme") && inner != XmlPullParser.END_DOCUMENT) {
                         if (inner == XmlPullParser.START_TAG) {
                             if (p.name == "title" && title.isEmpty()) title = p.nextText()
                             else if (p.name == "desc" && desc.isEmpty()) desc = p.nextText()
+                            // <icon src="…"/> is an empty element: only the address is read, no text is consumed
+                            else if (p.name == "icon" && icon.isEmpty()) icon = p.getAttributeValue(null, "src")?.takeIf { it.startsWith("http") } ?: ""
                         }
                         inner = p.next()
                     }
@@ -159,7 +158,7 @@ object Xmltv {
                         e > now - (if (pd > 0) pd * 86400L else 3600L) && s < now + 129600 && epgSane(s, e)
                     ) {
                         val l = out.getOrPut(ch) { ArrayList() }
-                        if (l.size < MAX_PER_CHANNEL + pd * 48) l.add(EpgEntry(pool.of(title), shortDesc(desc), s, e))
+                        if (l.size < MAX_PER_CHANNEL + pd * 48) l.add(EpgEntry(pool.of(title), desc, s, e, icon.ifEmpty { null }))
                     }
                     // Memory is getting tight: stop and keep what has been read so far (better gaps in the program than a crash)
                     if (++seen % 5000 == 0 && Mem.heapTight(0.70)) { truncated = true; return }

@@ -1,6 +1,37 @@
-Last update: 2026-11-12 (release 1.4 prepared). Read `CLAUDE.md` first, then this file.
+Last update: 2026-11-22 (T-026 to T-036). Read `CLAUDE.md` first, then this file.
 
 ## Current task
+
+T-036 (DubTvP brand finish, task file `docs/tasks/T-036-dubtvp-brand-finish.md`), requested by the maintainer on 22 Nov 2026: user-visible "IPVIO" texts to DubTvP (keys and 10-language translations together), old logo files removed, start intro (`BrandIntro`, `BrandIntroLogic`, setting `intro_anim`), Design System artifact "DubTvP — Identité visuelle" filled.
+
+- Checks that ran: 47/47 pure-logic tests (JVM, Kotlin 2.2.10, JUnit stand-in), translation lookup of the renamed keys in all 10 languages, parse-only syntax check of the changed Kotlin files, frame-by-frame simulation of the intro.
+- **Not run:** Gradle build, device test.
+- **Open:** the four old logo files (`res/drawable/ic_brand_mark.png`, `ic_logo_fg.png`, `ic_launcher_foreground.xml`, `ic_launcher_background.xml`) must be deleted in the working tree by the maintainer (the patch in the delivery ZIP deletes them).
+- Next step: the maintainer builds, runs the test steps of T-036 and T-029–T-035 on the Fire TV, and commits.
+
+## T-029 to T-035
+
+T-029 to T-035 ("next level", task file `docs/tasks/T-029-T-035-next-level.md`) on top of T-026 to T-028: Bell channel numbers, quick fixes, DubTvP identity (name, red glass logo, icons, banner, red default theme), ambient color, "Tonight" row, cinema mode. T-034 (Google TV Watch Next) was not built: it needs Google's approval and Fire TV does not show it.
+
+- Checks that ran (JVM, Kotlin 2.2.10, stand-in for JUnit): 42/42 pure-logic tests. Parse-only syntax check of the changed Kotlin files.
+- **Not run:** Gradle build, device test.
+- Logo re-rendered in Blender (Cycles) on 22 Nov 2026 after the maintainer rejected the procedural renders; sources in `docs/brand/` (scene and asset script, both reproduce the committed files exactly). `BrandLoader` now keeps its light band inside the picture with `BlendMode.SrcAtop`; `BrandArt` was removed.
+- Same day, after "logo ok": wordmark in Sora SemiBold as brushed aluminium (Blender), spun-titanium texture on the banner and the icon background (`docs/brand/dubtvp_wordmark_scene.py`, `compose_assets.py`).
+- The maintainer approved the Blender logo ("logo = ok"). The old brand images are removed in T-036.
+- Next step: the maintainer builds, tests on the Fire TV (steps in the task files) and commits.
+
+## T-026 to T-028 (22 Nov 2026)
+
+T-026 (Québec channels first, Bell Fibe order), T-027 (fluid channel menu in the live player) and T-028 (TV guide layout and look), requested and approved by the maintainer on 22 Nov 2026 (order on by default, region Québec City). Task files: `docs/tasks/T-026-quebec-first-order.md`, `T-027-live-channel-menu.md`, `T-028-tv-guide-layout.md`.
+
+- New files: `QcLineupLogic.kt`, `QcOrder.kt`, `ChannelMenuLogic.kt`, `GuideGridLogic.kt`, `DictQ.kt`; tests `QcLineupLogicTest.kt`, `ChannelMenuLogicTest.kt`, `GuideGridLogicTest.kt`.
+- Changed: `General.kt`, `SettingsResetLogic.kt`, `SettingsHub.kt`, `Lang.kt`, `HomeScreen.kt`, `MainActivity.kt`, `PlayerLive.kt`, `PlayerGuide.kt`, `Epg.kt` (`dayLabel` only), `DictConsistencyTest.kt`, `CHANGELOG.md`, `docs/SETTINGS.md`, `docs/FEATURES.md`.
+- New preference keys (no migration needed, defaults apply): `qc_order`, `qc_region` in `ipvio_general`.
+- Checks that ran (JVM, Kotlin 2.2.10, stand-in for JUnit): `QcLineupLogicTest` 10/10, `ChannelMenuLogicTest` 6/6, `GuideGridLogicTest` 6/6, `DictConsistencyTest` 3/3, `SettingsResetLogicTest` 6/6. Parse-only syntax check of the changed Android files: no syntax errors.
+- **Not run:** Gradle build (the Compose files were not compiled), device test. `PlayerScreen.kt` was not changed.
+- Next step: the maintainer builds, runs the test steps of the three task files on the Fire TV, and commits (proposed messages in the report).
+
+## Previous task (12 Nov 2026)
 
 Release 1.4 (`versionCode` 5): `main` plus the speed series (T-019 to T-023), R8 over the whole app (T-024) and the update card fix (T-025). Reported by the maintainer on 12 Nov 2026: built and tested on the device, works. The individual checks and any measurements were not recorded. The statuses "not built, not tested" further down for these tasks are older than this report. The maintainer builds the signed APK, creates `update.json` and publishes the GitHub release `v1.4` (steps in `docs/RELEASE.md`). The assistant did not build or publish anything. Rollback for R8 if users report a crash at start: `enable = false` in `app/build.gradle.kts` and a new release.
 

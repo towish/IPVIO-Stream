@@ -7,12 +7,12 @@ All settings are on the **Settings** tab of the sidebar. They are grouped into t
 | General | Start screen, exit behaviour, autostart, landscape on phones |
 | Language & region | App language (10 languages), clock format, time zone |
 | View | Card size and artwork with live preview, sidebar position (left, right, top) and labels, grid, default cinema view |
-| Design | Colour theme, background, fonts (Outfit, Inter, system), text and display size, animations |
+| Design | Colour theme, background, fonts (Outfit, Inter, system), text and display size, animations, start intro (T-036; key `intro_anim` in `ipvio_general`, default on) |
 | Menu | Order and visibility of sidebar entries |
 | Player | Seek steps, skip intro/credits, quality, 4K check, source fallback on broken links, frame-rate matching, aspect ratio |
 | Audio & subtitles | Preferred audio and subtitle languages, subtitle style, remember per title |
 | Genres & categories | Automatic genres or provider categories, hide categories |
-| Live TV & guide | TV guide source, channel lists, reminders, rewind live TV (on-device buffer), recordings and their storage |
+| Live TV & guide | TV guide source, channel lists, reminders, rewind live TV (on-device buffer), recordings and their storage, quality bundles, row size, Québec-first order with the region of the local stations (T-026; keys `qc_order`, `qc_region` in `ipvio_general`) |
 | Playlists | Add, edit, remove playlists, show several at the same time ("Also show"), language filter, refresh interval or fixed time |
 | Profiles | Per-person history, favourites and parental controls |
 | API keys | Your own TMDB and OMDb keys, with a connection test |

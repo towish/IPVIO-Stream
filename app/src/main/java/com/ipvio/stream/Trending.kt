@@ -8,17 +8,22 @@ import org.json.JSONObject
 object Trending {
     private val client = Net.base
     private var cache: Set<String>? = null
+    private var cacheLang = ""
 
     fun norm(s: String): String = s.lowercase().filter { it.isLetterOrDigit() }
 
     suspend fun titles(): Set<String> {
-        cache?.let { return it }
+        // T-030: titles in the app language (before: always German) plus English; the original titles come with every answer.
+        // The trend row matches these names against the playlist titles, which are in the provider's language.
+        val langs = listOf(Lang.tmdb(), "en-US").distinct()
+        val key = langs.joinToString(",")
+        cache?.let { if (cacheLang == key) return it }
         if (!MetaRepo.enabled()) return emptySet()
         val out = HashSet<String>()
         withContext(Dispatchers.IO) {
-            for (type in listOf("movie", "tv")) for (page in 1..3) {
+            for (lang in langs) for (type in listOf("movie", "tv")) for (page in 1..3) {
                 try {
-                    val url = "https://api.themoviedb.org/3/trending/$type/week?api_key=${Config.TMDB_KEY}&language=de-DE&page=$page"
+                    val url = "https://api.themoviedb.org/3/trending/$type/week?api_key=${Config.TMDB_KEY}&language=$lang&page=$page"
                     val body = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
                         if (r.isSuccessful) r.body?.string() else null
                     } ?: continue
@@ -34,7 +39,7 @@ object Trending {
                 }
             }
         }
-        if (out.isNotEmpty()) cache = out
+        if (out.isNotEmpty()) { cache = out; cacheLang = key }
         return out
     }
 }

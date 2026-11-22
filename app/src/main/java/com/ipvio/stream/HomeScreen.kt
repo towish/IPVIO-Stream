@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -111,9 +112,11 @@ private class HomeData(
     val rowMovies: List<Item> = movies, val rowSeries: List<Item> = series
 )
 
-private fun buildHome(all: List<Item>, ipvioWanted: Boolean, trend: Set<String>, noAdult: Boolean = false): HomeData {
-    val live = ArrayList<Item>(); val movies0 = ArrayList<Item>(); val series = ArrayList<Item>()
-    for (i in all) when (i.kind) { Kind.LIVE -> live.add(i); Kind.MOVIE -> movies0.add(i); Kind.SERIES -> series.add(i) }
+private fun buildHome(all: List<Item>, ipvioWanted: Boolean, trend: Set<String>, noAdult: Boolean = false, qc: Int = -1): HomeData {
+    val live0 = ArrayList<Item>(); val movies0 = ArrayList<Item>(); val series = ArrayList<Item>()
+    for (i in all) when (i.kind) { Kind.LIVE -> live0.add(i); Kind.MOVIE -> movies0.add(i); Kind.SERIES -> series.add(i) }
+    // T-026: Québec first in the Bell Fibe order (shared with MainActivity, so the channel numbers match the player and guide)
+    val live = QcOrder.live(all, qc, live0)
     // Show the same movie in several versions (HD, 4K, …) only once; the version is chosen on the detail page (source)
     val movies = PlaylistLogic.firstPerKey(movies0) { it.mk + "|" + it.lang }
     val genresOk = MetaRepo.enabled() && Classifier.supported(movies.size + series.size)
@@ -127,7 +130,7 @@ private fun buildHome(all: List<Item>, ipvioWanted: Boolean, trend: Set<String>,
     val rowMP = if (rm === movies) movieP else providerGroups(rm)
     val rowSP = if (rs === series) seriesP else providerGroups(rs)
     return HomeData(
-        live, movies, series, providerGroups(live), movieP, seriesP,
+        live, movies, series, QcOrder.groups(providerGroups(live), qc), movieP, seriesP,
         if (ipvio) ipvioGroups(rm) else rowMP, if (ipvio) ipvioGroups(rs) else rowSP,
         topRated(rm), topRated(rs), all.associateBy { it.id }, trendItems, genresOk, rm, rs
     )
@@ -181,13 +184,14 @@ private object HomeCache {
     private var noAdult = false
     private var ver = -1
     private var trend: Set<String>? = null
+    private var qc = -1
     private var data: HomeData? = null
 
-    @Synchronized fun get(all: List<Item>, order: Map<String, Int>, want: Boolean, ver: Int, trend: Set<String>, noAdult: Boolean): HomeData? =
-        if (all === this.all && order === this.order && want == this.want && ver == this.ver && trend === this.trend && noAdult == this.noAdult) data else null
+    @Synchronized fun get(all: List<Item>, order: Map<String, Int>, want: Boolean, ver: Int, trend: Set<String>, noAdult: Boolean, qc: Int): HomeData? =
+        if (all === this.all && order === this.order && want == this.want && ver == this.ver && trend === this.trend && noAdult == this.noAdult && qc == this.qc) data else null
 
-    @Synchronized fun put(all: List<Item>, order: Map<String, Int>, want: Boolean, ver: Int, trend: Set<String>, noAdult: Boolean, d: HomeData) {
-        this.all = all; this.order = order; this.want = want; this.ver = ver; this.trend = trend; this.noAdult = noAdult; data = d
+    @Synchronized fun put(all: List<Item>, order: Map<String, Int>, want: Boolean, ver: Int, trend: Set<String>, noAdult: Boolean, qc: Int, d: HomeData) {
+        this.all = all; this.order = order; this.want = want; this.ver = ver; this.trend = trend; this.noAdult = noAdult; this.qc = qc; data = d
     }
 
     /** For the wait after a change: better show the previous state than an empty skeleton. */
@@ -210,7 +214,7 @@ private fun topRated(list: List<Item>): List<Item> =
 @Composable
 fun HomeScreen(
     tab: Int, onTab: (Int) -> Unit, states: List<LazyListState>,
-    onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit,
+    onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit, onPlayDirect: (Item) -> Unit,
     onResume: (Entry, Item) -> Unit, onBrowse: (BrowseReq) -> Unit,
     onCategories: (CatReq) -> Unit, onAdd: () -> Unit
 ) {
@@ -228,11 +232,12 @@ fun HomeScreen(
     LaunchedEffect(all.isNotEmpty()) { if (all.isNotEmpty()) { trend = Trending.titles(); HomeVer.trend = trend } }
     val wantIpvio = AppSettings.ipvioFilter
     val noAdult = Parental.adultOffHome
-    val cached = HomeCache.get(all, order, wantIpvio, ver, trend, noAdult)
+    val qc = QcOrder.key()
+    val cached = HomeCache.get(all, order, wantIpvio, ver, trend, noAdult, qc)
     // When inputs change, the previous state stays visible until the new result (produceState keeps the value)
-    val dataState = produceState(cached, all, order, wantIpvio, ver, trend, noAdult) {
-        value = HomeCache.get(all, order, wantIpvio, ver, trend, noAdult)
-            ?: withContext(Dispatchers.Default) { keepLiveLists(buildHome(all, wantIpvio, trend, noAdult), HomeCache.last()) }.also { HomeCache.put(all, order, wantIpvio, ver, trend, noAdult, it) }
+    val dataState = produceState(cached, all, order, wantIpvio, ver, trend, noAdult, qc) {
+        value = HomeCache.get(all, order, wantIpvio, ver, trend, noAdult, qc)
+            ?: withContext(Dispatchers.Default) { keepLiveLists(buildHome(all, wantIpvio, trend, noAdult, qc), HomeCache.last()) }.also { HomeCache.put(all, order, wantIpvio, ver, trend, noAdult, qc, it) }
     }
     // While recomputing: show the previous state, the loading skeleton only the very first time
     val prev = HomeCache.last()
@@ -296,6 +301,11 @@ fun HomeScreen(
             homeSafe(LibMatch.matches(PlaylistStore.channels, c.similar, 40).filter { it.id != src.id && it.id !in seen && it.kind != Kind.LIVE }, noAdult)
         }
         if (l.size >= 4) value = src to l.take(20)
+    }
+
+    // New releases on the streaming services (TMDB discover): one rail per service, fetched once per home open
+    val newRel by produceState<Map<String, List<Item>>>(emptyMap(), Unit) {
+        if (MetaRepo.enabled()) value = NewReleases.fetchAll()
     }
 
     // Check new episodes of favorite series (bell)
@@ -407,12 +417,31 @@ fun HomeScreen(
         pick(MenuLogic.MYLIST, watchList.filter { it.kind != Kind.LIVE }.ifEmpty { topS.drop(3) })
     }
     val liveLogos = nowChannels.mapNotNull { it.logo }.take(3)
+    // T-033: "Tonight": the evening's shows on the favorite, recent and first channels, from the TV guide on the device
+    val tonightChannels = remember(favLiveHome, histHome, live) {
+        (favLiveHome + histHome.filter { it.kind == Kind.LIVE } + homeSafe(live.take(30), noAdult)).distinctBy { it.id }.take(14)
+    }
+    val tonightOn = HomeLayout.shown("tonight")
+    val tonight by produceState(emptyList<TonightLogic.Pick<Item>>(), tonightChannels, tonightOn) {
+        if (!tonightOn || tonightChannels.isEmpty()) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(1500)   // the home screen first, then the guide requests
+        val now = System.currentTimeMillis() / 1000
+        val off = epgZone().getOffset(now * 1000) / 1000
+        val data = tonightChannels.map { ch ->
+            ch to runCatching { EpgFull.get(ch) }.getOrDefault(emptyList()).map { TonightLogic.Show(it.title, it.start, it.end) }
+        }
+        value = withContext(Dispatchers.Default) { TonightLogic.pick(data, now, off) }
+    }
+    // T-031: neutral surfaces with the icon in the accent color (before: one bright color per tile, which drowned the brand
+    // green). Bright colors are kept for meaning only: red for live, gold for favorites.
+    val tileC1 = lerp(Bg, Color.White, 0.075f)
+    val tileC2 = lerp(Bg, Color.White, 0.025f)
     val tiles = listOf(
-        QuickTile("Live TV", "${live.size} Sender", 3, Color(0xFF6B3A0E), Color(0xFF2B1708), Color(0xFFF59E0B), logos = liveLogos) { onTab(3) },
-        QuickTile("Filme", "${movies.size} Filme", 1, Color(0xFF1E3A8A), Color(0xFF0F1B45), Color(0xFF60A5FA), image = tileImg[1]) { onTab(1) },
-        QuickTile("Serien", "${series.size} Serien", 2, Color(0xFF4C1D95), Color(0xFF22104A), Color(0xFFC084FC), image = tileImg[2]) { onTab(2) },
-        QuickTile("Favoriten", "Deine Auswahl", 7, Color(0xFF7F1D1D), Color(0xFF3A0B0B), Color(0xFFFB7185), image = tileImg[MenuLogic.FAVS]) { onTab(MenuLogic.FAVS) },
-        QuickTile("Meine Liste", "${watchList.count { it.kind != Kind.LIVE }} Titel", 8, Color(0xFF134E4A), Color(0xFF082725), Color(0xFF2DD4BF), image = tileImg[MenuLogic.MYLIST]) { onTab(MenuLogic.MYLIST) }
+        QuickTile("Live TV", "${live.size} Sender", 3, tileC1, tileC2, PT.Live, logos = liveLogos) { onTab(3) },
+        QuickTile("Filme", "${movies.size} Filme", 1, tileC1, tileC2, Accent1, image = tileImg[1]) { onTab(1) },
+        QuickTile("Serien", "${series.size} Serien", 2, tileC1, tileC2, Accent1, image = tileImg[2]) { onTab(2) },
+        QuickTile("Favoriten", "Deine Auswahl", 7, tileC1, tileC2, DS.Gold, image = tileImg[MenuLogic.FAVS]) { onTab(MenuLogic.FAVS) },
+        QuickTile("Meine Liste", "${watchList.count { it.kind != Kind.LIVE }} Titel", 8, tileC1, tileC2, Accent1, image = tileImg[MenuLogic.MYLIST]) { onTab(MenuLogic.MYLIST) }
     )
     DisposableEffect(Unit) { onDispose { HomeReturn.returning = true } }
 
@@ -530,7 +559,7 @@ fun HomeScreen(
     // Info at the top only for the normal title rows (from "Top 10 today" or "Newly added"), not for tiles, Live TV, Continue watching,
     // My list and Recently watched. And only if the row is low enough not to cover the info.
     val listTop = remember { floatArrayOf(0f) }
-    val noBb = remember { setOf("hero", "top", "tiles", "resume", "chnow", "hero1", "hero2", "top1", "top2", "res1", "res2", "wl1", "wl2", "hr1", "hr2", "hint1", "hint2") }
+    val noBb = remember { setOf("hero", "top", "tiles", "resume", "chnow", "tonight", "hero1", "hero2", "top1", "top2", "res1", "res2", "wl1", "wl2", "hr1", "hr2", "hint1", "hint2") }
     val bbOnState = remember(tab) {
         derivedStateOf {
             if (!bbTab || !Billboard.cardFocus || Billboard.focused == null) return@derivedStateOf false
@@ -602,7 +631,7 @@ fun HomeScreen(
                     }
                 }
                 tab == 3 -> LiveTab(live, liveP, favLive, onOpen, onPlayNow)
-                tab == MenuLogic.SPORT -> SportHub(live) { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }
+                tab == MenuLogic.SPORT -> SportHub(live, onPlay = { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }, onPlayDirect = onPlayDirect)
                 // The selected row stays in the lower half (PivotSpec); rows above are hidden so that at the top
                 // title and info of the selected title are free (billboard)
                 else -> CompositionLocalProvider(
@@ -643,11 +672,28 @@ fun HomeScreen(
                                 if (!HomeLayout.shown(blockId)) continue
                                 when (blockId) {
                                     "tiles" -> { item(key = "tiles") { QuickTiles(tiles) } }
+                                    // New releases on the streaming services: one rail per service (TMDB discover, region CA)
+                                    "newrel" -> {
+                                        if (MetaRepo.enabled()) {
+                                            NewReleases.PROVIDERS.forEach { p ->
+                                                val items = newRel[p.id].orEmpty()
+                                                if (items.isNotEmpty()) item(key = "nr${p.id}") {
+                                                    val title = Lang.tr("Neu auf {0}").replace("{0}", p.name)
+                                                    ItemsRow(title, items, cardW, onOpen) { onBrowse(BrowseReq(title, items, SORT_NEW)) }
+                                                }
+                                            }
+                                        } else item(key = "nrkey") {
+                                            Text(Lang.tr("Für Neuheiten: TMDB-Schlüssel in den Einstellungen eintragen"),
+                                                color = Muted, fontSize = spx(15), raw = true,
+                                                modifier = Modifier.padding(start = RowPadX + dpx(2), top = dpx(18)))
+                                        }
+                                    }
                                     "clock" -> { item(key = "clock") { ClockWidget() } }
                                     // Continue watching directly under the tiles: whoever watches a lot wants to continue in few clicks
                                     "resume" -> { if (resumeList.isNotEmpty()) item(key = "resume") { ResumeRow(resumeList, cardW, onResume) } }
                                     "favch" -> { if (favLiveHome.isNotEmpty()) item(key = "favch") { ItemsRow("Meine Sender", favLiveHome, cardW, onOpen) { onTab(3) } } }
                                     "chnow" -> { if (nowChannels.isNotEmpty()) item(key = "chnow") { ChannelNowRow("Live TV", nowChannels, onOpen) { onTab(3) } } }
+                                    "tonight" -> { if (tonight.isNotEmpty()) item(key = "tonight") { TonightRow("Heute Abend", tonight, onOpen) } }
                                     // Top 10 always as whole covers (independent of the picture setting)
                                     "trend" -> { if (trendItems.size >= 3) item(key = "trend") {
                                         ItemsRow("Top 10 heute", trendTop, cardW, onOpen, style = CARD_TOP10) { onBrowse(BrowseReq("Im Trend", trendItems, SORT_PLAYLIST)) }

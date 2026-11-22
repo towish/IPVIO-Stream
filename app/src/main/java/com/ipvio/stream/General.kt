@@ -30,6 +30,10 @@ object General {
     var bundleLive by mutableStateOf(true)
     /** Live TV channel row size: 0 = small, 1 = normal (default), 2 = large. */
     var channelRowSize by mutableIntStateOf(1)
+    /** T-026: Live TV lists start with the Québec and Canadian channels in Bell Fibe order (see [QcLineupLogic]). */
+    var qcOrder by mutableStateOf(true)
+    /** T-026: region whose local stations come first (QcLineupLogic.REGION_*), default Québec City. */
+    var qcRegion by mutableIntStateOf(QcLineupLogic.REGION_QUEBEC)
     /** Playlist refresh: 0 = at every start, 1 = every X hours, 2 = daily, 3 = weekly, 4 = by hand only */
     var refreshMode by mutableIntStateOf(DEFAULT_REFRESH_MODE)
     var refreshInterval by mutableIntStateOf(12)
@@ -69,6 +73,8 @@ object General {
     var heroSec by mutableIntStateOf(9)
     /** Clock next to the profile icon (default: on). */
     var showClock by mutableStateOf(true)
+    /** T-036: animated DubTvP intro at the start of the app. */
+    var introAnim by mutableStateOf(true)
     /** Sports: show real results (unofficial ESPN source). When off, the sports area uses only playlist and TV guide. */
     var sportLive by mutableStateOf(true)
     /** Adjust screen (1.2): margin in percent left/right and top/bottom so nothing is cut off at the TV edge. */
@@ -127,6 +133,8 @@ object General {
         vodCats = p.getBoolean("vod_cats", false)
         bundleLive = p.getBoolean("bundle_live", true)
         channelRowSize = p.getInt("channel_row_size", 1).coerceIn(0, 2)
+        qcOrder = p.getBoolean("qc_order", true)
+        qcRegion = p.getInt("qc_region", QcLineupLogic.REGION_QUEBEC).coerceIn(0, QcLineupLogic.PREFERRED_REGIONS.lastIndex)
         // Users who never chose a mode get "daily": the first start still loads the list once (lastRefresh = 0),
         // later starts use the cache. Before 1.4 the default was "at every start", which re-downloaded the whole line each time.
         // One-time switch for existing installs: "at every start" (0, the old default) becomes "daily" (maintainer decision,
@@ -153,6 +161,7 @@ object General {
         defaultAspect = p.getInt("aspect", 0).coerceIn(0, ASPECT_NAMES.lastIndex)
         heroSec = p.getInt("hero_sec", 9).coerceIn(0, 60)
         showClock = p.getBoolean("show_clock", true)
+        introAnim = p.getBoolean("intro_anim", true)
         sportLive = p.getBoolean("sport_live", true)
         fitX = p.getInt("fit_x", 0).coerceIn(0, 10)
         fitY = p.getInt("fit_y", 0).coerceIn(0, 10)
@@ -172,6 +181,8 @@ object General {
     fun setResumeVod(c: Context, v: Boolean) { resumeVod = v; prefs(c).edit().putBoolean("resume_vod", v).apply() }
     fun setBundleLive(c: Context, v: Boolean) { bundleLive = v; prefs(c).edit().putBoolean("bundle_live", v).apply() }
     fun setChannelRowSize(c: Context, v: Int) { channelRowSize = v.coerceIn(0, 2); prefs(c).edit().putInt("channel_row_size", channelRowSize).apply() }
+    fun setQcOrder(c: Context, v: Boolean) { qcOrder = v; prefs(c).edit().putBoolean("qc_order", v).apply() }
+    fun setQcRegion(c: Context, v: Int) { qcRegion = v.coerceIn(0, QcLineupLogic.PREFERRED_REGIONS.lastIndex); prefs(c).edit().putInt("qc_region", qcRegion).apply() }
     fun setVodCats(c: Context, v: Boolean) { vodCats = v; prefs(c).edit().putBoolean("vod_cats", v).apply() }
     fun setConfirmExit(c: Context, v: Boolean) { confirmExit = v; prefs(c).edit().putBoolean("confirm_exit", v).apply() }
     fun setPlan(c: Context, mode: Int = refreshMode, interval: Int = refreshInterval, hour: Int = refreshHour, minute: Int = refreshMinute, dow: Int = refreshDow) {
@@ -196,6 +207,7 @@ object General {
     fun setPreviewStyle(c: Context, v: Int) { previewStyle = v.coerceIn(0, 1); prefs(c).edit().putInt("preview_style", previewStyle).apply() }
     fun setSportLive(c: Context, v: Boolean) { sportLive = v; prefs(c).edit().putBoolean("sport_live", v).apply() }
     fun setShowClock(c: Context, v: Boolean) { showClock = v; prefs(c).edit().putBoolean("show_clock", v).apply() }
+    fun setIntroAnim(c: Context, v: Boolean) { introAnim = v; prefs(c).edit().putBoolean("intro_anim", v).apply() }
     fun setFit(c: Context, x: Int = fitX, y: Int = fitY) {
         fitX = x.coerceIn(0, 10); fitY = y.coerceIn(0, 10)
         prefs(c).edit().putInt("fit_x", fitX).putInt("fit_y", fitY).apply()

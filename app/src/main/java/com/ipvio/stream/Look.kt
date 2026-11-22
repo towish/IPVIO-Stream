@@ -19,16 +19,21 @@ class BgPreset(val name: String, val bg: Int, val surf: Int, val surf2: Int)
  * so when switching the whole app changes immediately without any screen having to be adjusted.
  */
 object Look {
-    /** Default design: light green #4ADE80 (highlight #86EFAC) on navy #0B0F19. */
+    /** Default design: DubTvP red #E3143A (highlight #FF6B7D) on navy #0B0F19 (T-031; before: green #4ADE80). */
     const val BRAND_GREEN = 0x4ADE80
     const val BRAND_GREEN_HI = 0x86EFAC
     const val BRAND_NAVY = 0x0B0F19
-    /** Default: IPVIO green on navy (round 13e: the design colors were removed again). */
+    /** T-031: DubTvP red (logo glass) and its light tone for highlights. */
+    const val BRAND_RED = 0xE3143A
+    const val BRAND_RED_HI = 0xFF6B7D
+    /** Default: DubTvP red (T-031); the former IPVIO green is "Smaragd". The navy background keeps index 0. */
     const val DEFAULT_ACCENT = 0
     const val DEFAULT_BG = 0
 
     val ACCENTS = listOf(
-        AccentPreset("IPVIO", BRAND_GREEN, BRAND_GREEN_HI),
+        // T-031: the first preset is the default theme, now the DubTvP red of the logo (before: IPVIO green). Its index
+        // stays 0 so stored choices keep their meaning; green remains available as "Smaragd".
+        AccentPreset("DubTvP", BRAND_RED, BRAND_RED_HI),
         AccentPreset("Violett & Türkis", 0x7C5CFF, 0x00D4C8),
         AccentPreset("Ozean", 0x2F6FE0, 0x5CD6FF),
         AccentPreset("Smaragd", 0x0A7F58, 0x4ADE80),
@@ -50,7 +55,7 @@ object Look {
     val CUSTOM get() = ACCENTS.size
 
     val BGS = listOf(
-        BgPreset("IPVIO Navy", BRAND_NAVY, 0x151B2A, 0x1F2739),
+        BgPreset("Marineblau", BRAND_NAVY, 0x151B2A, 0x1F2739),
         BgPreset("Mitternacht", 0x07080C, 0x12141C, 0x1B1E2A),
         BgPreset("OLED-Schwarz", 0x000000, 0x0B0C10, 0x15171E),
         BgPreset("Graphit", 0x121316, 0x1C1E24, 0x272A32),
