@@ -11,6 +11,7 @@
 - Player channel menu (Left): stepping through the categories no longer reloads the channel list on every step; it follows when the focus rests, OK or Right opens a category at once. The category column opens on the selected category, uses the Live TV order, and the rows have a fixed height with channel number and logo or letters. Not measured (T-027)
 - TV guide: time marks are no longer cut at the edges, long descriptions end with "…" on a whole line, channel cells show the number and a logo or letters, very short fillers are no longer drawn as slivers, day marks follow the UI language, and the grid follows the category focus only when it rests. Calmer focus colors and one "now" line over all rows. Not measured (T-028)
 
+- Integration fix: `CoreLogicTest` default-accent assertion updated to the DubTvP red default theme (T-031); the test still encoded the old IPVIO green default
 - Integration fix: `Billboard.kt` no longer imports the non-existent `androidx.compose.animation.using` (the `using` infix is a member of `ContentTransform`); this was the only compile error of the first integrated CI build
 
 ## 1.4.1

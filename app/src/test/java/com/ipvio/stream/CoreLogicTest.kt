@@ -89,7 +89,7 @@ http://h/x
     }
 
     @Test fun farben_firmenfarbenSindStandard() {
-        assertEquals(Look.BRAND_GREEN, Look.ACCENTS[0].fill)
+        assertEquals(Look.BRAND_RED, Look.ACCENTS[0].fill)
         assertEquals(0x0B0F19, Look.BGS[0].bg)
         // Neon green gets dark text, dark surfaces still get white
         assertEquals(ThemeMath.INK, ThemeMath.onAccent(Look.BRAND_GREEN))

@@ -97,3 +97,4 @@ Revert the commit. The new preference key `intro_anim` is simply ignored by olde
 ## Integration fixes (22 Nov 2026, first CI build of the integrated tree)
 
 - `Billboard.kt`: removed the import `androidx.compose.animation.using` — no such top-level declaration exists; `using` is an infix member of `ContentTransform`, so the call site `(fadeIn(...) togetherWith fadeOut(...)) using null` needs no import. This was the only compile error of the first CI run (run 67, `:app:compileDebugKotlin`).
+- `CoreLogicTest.kt` (`farben_firmenfarbenSindStandard`): the default-accent assertion now expects `Look.BRAND_RED` instead of `Look.BRAND_GREEN` — T-031 changed the default theme (accent index 0) to DubTvP red on purpose; the old test still encoded the IPVIO green default. The remaining assertions (navy background, green contrast properties) are unchanged. This was the only failure of CI run 68 (445 tests, 1 failed); compilation itself passed.
