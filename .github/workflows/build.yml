@@ -18,6 +18,10 @@ jobs:
         distribution: temurin
         java-version: '21'
     - uses: gradle/actions/setup-gradle@v4
+    - name: Install fixed debug keystore
+      run: |
+        mkdir -p ~/.android
+        cp ci/debug.keystore ~/.android/debug.keystore
     - name: Make Gradle wrapper executable
       run: chmod +x gradlew
     - name: Unit tests
