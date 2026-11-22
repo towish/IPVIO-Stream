@@ -83,6 +83,7 @@ Heute Abend¦Tonight¦¦¦¦¦¦Ce soir¦
 Spieler des Spiels¦Player of the game¦¦¦¦¦¦Joueur du match¦
 Web-Quellen¦Web sources¦¦¦¦¦¦Sources web¦
 Nativ abspielen¦Play in the IPVIO player¦¦¦¦¦¦Lire dans le lecteur IPVIO¦
+Pfeile: Cursor · OK: Klick¦Arrows: cursor · OK: click¦¦¦¦¦¦Flèches : curseur · OK : clic¦
 Quelle wählen¦Choose a source¦¦¦¦¦¦Choisir une source¦
 Auf dem Eis¦On the ice¦¦¦¦¦¦Sur la glace¦
 Siegwahrscheinlichkeit¦Win probability¦¦¦¦¦¦Probabilité de victoire¦
