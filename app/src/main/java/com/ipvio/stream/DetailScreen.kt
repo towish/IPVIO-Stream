@@ -584,39 +584,6 @@ private fun DetailScreenFull(
                                 }
                             }
                         }
-                        // New releases and TMDB search hits: open the title directly in its streaming app
-                        // (the title is not in the playlist); the web sources work for movies directly and
-                        // for series through the season/episode picker
-                        if (NewReleases.isNewRelease(item)) {
-                            val svc = StreamLaunch.serviceFor(item)
-                            val nrTmdb = WebSources.tmdbIdOf(item)
-                            val nrMovie = nrTmdb > 0 && item.kind == Kind.MOVIE
-                            val nrSeries = nrTmdb > 0 && item.kind == Kind.SERIES
-                            if (svc != null || nrMovie || nrSeries) {
-                                Spacer(Modifier.height(4.dp))
-                                Row(Modifier.offset(x = (-8).dp).padding(horizontal = 8.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
-                                    if (svc != null) {
-                                        HeroButton(Lang.tr("Auf {0} ansehen").replace("{0}", svc.name), AIcon.Play, true,
-                                            Modifier.focusRequester(playFocus), 44) {
-                                            scope.launch { StreamLaunch.open(ctx, item) }
-                                        }
-                                    }
-                                    if (nrMovie) {
-                                        HeroButton("Web-Quellen", AIcon.Play, svc == null,
-                                            if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
-                                            srcTarget = WebSources.Target(item.title, nrTmdb, 0, 0)
-                                        }
-                                    }
-                                    if (nrSeries) {
-                                        HeroButton("Web-Quellen", AIcon.Play, svc == null,
-                                            if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
-                                            epPick = item.title to nrTmdb
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         if (item.kind == Kind.MOVIE && movieAlts.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             // Choose the source explicitly (takes precedence over quality) or automatically to suit the device
                             val so = listOf("Automatisch") + movieVars.map { it.label }
@@ -665,6 +632,39 @@ private fun DetailScreenFull(
                             }
                         }
                         }
+                    // New releases and TMDB search hits: open the title directly in its streaming app
+                    // (the title is not in the playlist); the web sources work for movies directly and
+                    // for series through the season/episode picker
+                    if (NewReleases.isNewRelease(item)) {
+                        val svc = StreamLaunch.serviceFor(item)
+                        val nrTmdb = WebSources.tmdbIdOf(item)
+                        val nrMovie = nrTmdb > 0 && item.kind == Kind.MOVIE
+                        val nrSeries = nrTmdb > 0 && item.kind == Kind.SERIES
+                        if (svc != null || nrMovie || nrSeries) {
+                            Spacer(Modifier.height(4.dp))
+                            Row(Modifier.offset(x = (-8).dp).padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
+                                if (svc != null) {
+                                    HeroButton(Lang.tr("Auf {0} ansehen").replace("{0}", svc.name), AIcon.Play, true,
+                                        Modifier.focusRequester(playFocus), 44) {
+                                        scope.launch { StreamLaunch.open(ctx, item) }
+                                    }
+                                }
+                                if (nrMovie) {
+                                    HeroButton("Web-Quellen", AIcon.Play, svc == null,
+                                        if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
+                                        srcTarget = WebSources.Target(item.title, nrTmdb, 0, 0)
+                                    }
+                                }
+                                if (nrSeries) {
+                                    HeroButton("Web-Quellen", AIcon.Play, svc == null,
+                                        if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
+                                        epPick = item.title to nrTmdb
+                                    }
+                                }
+                            }
+                        }
+                    }
                     }
                 }
             }

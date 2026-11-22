@@ -36,3 +36,13 @@ directly — this task gives the app the same reach.
   the new-release rails.
 - Metadata on the detail page still resolves by title match (same as the rails); the
   web sources always use the exact TMDB id from the search hit.
+
+## Integration fix (same day, after the first device test)
+
+The user reported "the Streambert links aren't there" on the South Park detail page.
+Root cause, present since the new-release rails were added (2026-11-15): the whole
+info-only action block (streaming-app button + web sources) sat INSIDE the hero's
+`if (showActions)` gate, but `DetailScreen` passes `showActions && !infoOnly` to
+`DetailScreenFull` — so for every info-only item the block never rendered. The block
+was moved below the gate (content unchanged). This also revives the rails'
+"watch on <service>" button, which had never actually been visible.
