@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Full TMDB search in the search tab (T-037): titles the provider does not carry are found via TMDB and open an info page with web sources; series get a season/episode picker (also on the new-release rails)
 - Start intro: the app opens with a short DubTvP animation (the glass D turns into place, the metal name slides in) and ends on the home screen. Any key skips it; it can be switched off in Design > Animationen ("Intro beim Start") and is left out when animations are off. All screens, the phone pages and the translations now say DubTvP; the background preset "IPVIO Navy" is now "Marineblau". Old IPVIO logo files removed (T-036)
 - New name and look: the app is now called DubTvP, with a red glass "D" whose counter is the play sign, rendered in 3D, and the name in brushed metal on spun titanium (app icon, Android TV banner, sidebar, loading and buffering animation). The default color theme is DubTvP red; the IPVIO green stays available as "Smaragd". Home and settings tiles use neutral surfaces with the accent color (T-031)
 - Live TV: Bell channel numbers. With the Québec order on, recognised channels carry their Bell Fibe number (TVA 103, RDS 108) in Live TV, the player channel menu, the guide and the banner; typing a number on the remote opens that channel and names it while you type. Other channels are numbered from 1000 up (T-029)

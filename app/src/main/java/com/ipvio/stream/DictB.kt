@@ -85,6 +85,8 @@ Web-Quellen¦Web sources¦¦¦¦¦¦Sources web¦
 Nativ abspielen¦Play in the DubTvP player¦¦¦¦¦¦Lire dans le lecteur DubTvP¦
 Pfeile: Cursor · OK: Klick¦Arrows: cursor · OK: click¦¦¦¦¦¦Flèches : curseur · OK : clic¦
 Quelle wählen¦Choose a source¦¦¦¦¦¦Choisir une source¦
+TMDB · Filme¦TMDB · Movies¦¦¦¦¦¦TMDB · Films¦
+TMDB · Serien¦TMDB · Series¦¦¦¦¦¦TMDB · Séries¦
 Auf dem Eis¦On the ice¦¦¦¦¦¦Sur la glace¦
 Siegwahrscheinlichkeit¦Win probability¦¦¦¦¦¦Probabilité de victoire¦
 Schusskarte¦Shot chart¦¦¦¦¦¦Carte des tirs¦

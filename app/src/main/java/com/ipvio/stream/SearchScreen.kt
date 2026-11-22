@@ -141,6 +141,18 @@ fun SearchScreen(
     val searching = q.length >= 2 && found.first != q
     val (rm0, rs0, rl0) = if (q.length < 2 || searching) none else found.second
     val fl = SearchState.filter
+    // Full TMDB search (Streambert-style): titles the provider does not carry, as info-only items.
+    // Tagged with the query like the playlist results, so stale hits never show under a new input.
+    val wantTmdb = fl == 0 || fl == 1 || fl == 2
+    val tmdbF by produceState("" to emptyList<Item>(), q, wantTmdb) {
+        if (q.length < 2 || !wantTmdb || !TmdbSearch.enabled()) { value = q to emptyList(); return@produceState }
+        delay(400)
+        value = q to TmdbSearch.search(q)
+    }
+    val tmdbPending = q.length >= 2 && wantTmdb && TmdbSearch.enabled() && tmdbF.first != q
+    val tmdb = if (tmdbF.first == q) tmdbF.second else emptyList()
+    val tm = if (fl == 0 || fl == 1) tmdb.filter { it.kind == Kind.MOVIE } else emptyList()
+    val ts = if (fl == 0 || fl == 2) tmdb.filter { it.kind == Kind.SERIES } else emptyList()
     // Word suggestions for the word being typed
     val sugg = remember(SearchState.query, suggestIdx) { suggestIdx?.suggest(WordSuggest.lastWord(SearchState.query)).orEmpty() }
     // Sports hub filter: live channels that look like sports channels (the hub itself opens with the button)
@@ -150,7 +162,7 @@ fun SearchScreen(
     // The same movie in several versions only once (the source is chosen on the detail page)
     val rmAll: List<Item> = rm0   // already one per movie (see the search above)
     val rm = if (fl == 0 || fl == 1) rmAll else emptyList()
-    val firstKey = when { rm.isNotEmpty() -> "rm"; rs.isNotEmpty() -> "rs"; rl.isNotEmpty() -> "rl"; else -> "" }
+    val firstKey = when { rm.isNotEmpty() -> "rm"; rs.isNotEmpty() -> "rs"; rl.isNotEmpty() -> "rl"; tm.isNotEmpty() -> "tm"; ts.isNotEmpty() -> "ts"; else -> "" }
     // Back: from a hit (or any other element) first to the input (field or app keyboard); from the input to the sidebar
     BackHandler(enabled = !inSidebar) {
         // requestFocus returns false (no exception) when the target is not on screen: then go on to the sidebar instead of doing nothing
@@ -222,7 +234,7 @@ fun SearchScreen(
             }
             // Right: info panel of the highlighted title on top, the hits below
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                val preview = focusItem ?: (rm.firstOrNull() ?: rs.firstOrNull() ?: rl.firstOrNull() ?: hist.firstOrNull())
+                val preview = focusItem ?: (rm.firstOrNull() ?: rs.firstOrNull() ?: rl.firstOrNull() ?: tm.firstOrNull() ?: ts.firstOrNull() ?: hist.firstOrNull())
                 SearchInfoPanel(preview, Modifier.fillMaxWidth().height(190.dp).padding(start = 24.dp, end = DS.PageX, top = 16.dp))
                 CompositionLocalProvider(LocalSearchFocus provides { focusItem = it }) {
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = state, contentPadding = PaddingValues(bottom = 48.dp)) {
@@ -254,7 +266,7 @@ fun SearchScreen(
                     val openS: (Item) -> Unit = { i -> AppSettings.addSearch(ctx, q); onOpen(i) }
                     if (searching) item {
                         Text("Suche …", color = Muted, fontSize = 16.sp, modifier = Modifier.padding(horizontal = DS.PageX, vertical = 16.dp))
-                    } else if (rm.isEmpty() && rs.isEmpty() && rl.isEmpty()) item {
+                    } else if (rm.isEmpty() && rs.isEmpty() && rl.isEmpty() && tm.isEmpty() && ts.isEmpty() && !tmdbPending) item {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             EmptyState(AIcon.Info, "Keine Treffer", "Prüfe die Schreibweise oder suche nach einem Teil des Titels. Kleine Tippfehler findet die Suche trotzdem.")
                         }
@@ -272,6 +284,16 @@ fun SearchScreen(
                     if (rl.isNotEmpty()) item(key = "rl") {
                         SearchRow("Live TV", rl, cardW, openS, if (firstKey == "rl") firstRes else null) {
                             AppSettings.addSearch(ctx, q); onBrowse(BrowseReq("Suche „$q“ · Live TV", rl, S_SORT_AZ))
+                        }
+                    }
+                    if (tm.isNotEmpty()) item(key = "tm") {
+                        SearchRow("TMDB · Filme", tm, cardW, openS, if (firstKey == "tm") firstRes else null) {
+                            AppSettings.addSearch(ctx, q); onBrowse(BrowseReq("Suche „$q“ · TMDB Filme", tm, S_SORT_AZ))
+                        }
+                    }
+                    if (ts.isNotEmpty()) item(key = "ts") {
+                        SearchRow("TMDB · Serien", ts, cardW, openS, if (firstKey == "ts") firstRes else null) {
+                            AppSettings.addSearch(ctx, q); onBrowse(BrowseReq("Suche „$q“ · TMDB Serien", ts, S_SORT_AZ))
                         }
                     }
                 }

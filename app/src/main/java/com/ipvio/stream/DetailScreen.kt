@@ -257,6 +257,8 @@ private fun DetailScreenFull(
     val playFocus = remember { FocusRequester() }
     // Web sources (Streambert-style aggregators): picker target, then the running web player
     var srcTarget by remember { mutableStateOf<WebSources.Target?>(null) }
+    // TMDB series without playlist episodes: season/episode picker in front of the source picker
+    var epPick by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var webPlay by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Back from a person or a similar title: go back there, not to "Resume"
     var topMoreFocused by remember { mutableStateOf(false) }
@@ -582,13 +584,15 @@ private fun DetailScreenFull(
                                 }
                             }
                         }
-                        // New releases: open the title directly in its streaming app (the title is not in the playlist);
-                        // movies can also be played through the web sources (series would need a season/episode)
+                        // New releases and TMDB search hits: open the title directly in its streaming app
+                        // (the title is not in the playlist); the web sources work for movies directly and
+                        // for series through the season/episode picker
                         if (NewReleases.isNewRelease(item)) {
                             val svc = StreamLaunch.serviceFor(item)
                             val nrTmdb = WebSources.tmdbIdOf(item)
                             val nrMovie = nrTmdb > 0 && item.kind == Kind.MOVIE
-                            if (svc != null || nrMovie) {
+                            val nrSeries = nrTmdb > 0 && item.kind == Kind.SERIES
+                            if (svc != null || nrMovie || nrSeries) {
                                 Spacer(Modifier.height(4.dp))
                                 Row(Modifier.offset(x = (-8).dp).padding(horizontal = 8.dp, vertical = 6.dp),
                                     horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
@@ -602,6 +606,12 @@ private fun DetailScreenFull(
                                         HeroButton("Web-Quellen", AIcon.Play, svc == null,
                                             if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
                                             srcTarget = WebSources.Target(item.title, nrTmdb, 0, 0)
+                                        }
+                                    }
+                                    if (nrSeries) {
+                                        HeroButton("Web-Quellen", AIcon.Play, svc == null,
+                                            if (svc == null) Modifier.focusRequester(playFocus) else Modifier, 44) {
+                                            epPick = item.title to nrTmdb
                                         }
                                     }
                                 }
@@ -778,6 +788,9 @@ private fun DetailScreenFull(
     // Web sources: picker and web player are dialogs over the detail page
     srcTarget?.let { t ->
         WebSourcePicker(t, onPick = { url -> srcTarget = null; webPlay = url to t.title }, onClose = { srcTarget = null })
+    }
+    epPick?.let { (t, id) ->
+        TmdbEpisodePicker(t, id, onPick = { target -> epPick = null; srcTarget = target }, onClose = { epPick = null })
     }
     webPlay?.let { wp ->
         WebPlayerScreen(
