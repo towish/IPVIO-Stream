@@ -93,3 +93,7 @@ app icons, materials and both intro videos.
 ## Rollback
 
 Revert the commit. The new preference key `intro_anim` is simply ignored by older versions.
+
+## Integration fixes (22 Nov 2026, first CI build of the integrated tree)
+
+- `Billboard.kt`: removed the import `androidx.compose.animation.using` — no such top-level declaration exists; `using` is an infix member of `ContentTransform`, so the call site `(fadeIn(...) togetherWith fadeOut(...)) using null` needs no import. This was the only compile error of the first CI run (run 67, `:app:compileDebugKotlin`).
