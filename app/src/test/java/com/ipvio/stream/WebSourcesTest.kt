@@ -1,6 +1,7 @@
 package com.ipvio.stream
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,6 +22,18 @@ class WebSourcesTest {
         val serie = WebSources.Target("Serie", 550, 1, 2)
         assertEquals("https://vidfast.vc/tv/550/1/2", serie.url(src("vidfast")))
         assertTrue(serie.label().contains("S1 E2"))
+    }
+
+    @Test
+    fun extraktionErkenntUndWaehltStreams() {
+        assertTrue(WebExtract.isStream("https://cdn.example.com/hls/master.m3u8?tok=1"))
+        assertTrue(WebExtract.isStream("https://cdn.example.com/dash/manifest.mpd"))
+        assertFalse(WebExtract.isStream("https://cdn.example.com/seg-12.ts"))
+        val variant = "https://cdn.example.com/hls/720p/index.m3u8"
+        val master = "https://cdn.example.com/hls/master.m3u8"
+        assertEquals(master, WebExtract.better(variant, master))
+        assertEquals(variant, WebExtract.better(variant, "https://cdn.example.com/hls/360p/index.m3u8"))
+        assertEquals(variant, WebExtract.better(null, variant))
     }
 
     @Test

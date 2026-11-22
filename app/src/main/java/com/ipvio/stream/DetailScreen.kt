@@ -779,7 +779,13 @@ private fun DetailScreenFull(
     srcTarget?.let { t ->
         WebSourcePicker(t, onPick = { url -> srcTarget = null; webPlay = url to t.title }, onClose = { srcTarget = null })
     }
-    webPlay?.let { wp -> WebPlayerScreen(wp.first, wp.second) { webPlay = null } }
+    webPlay?.let { wp ->
+        WebPlayerScreen(
+            wp.first, wp.second,
+            onNative = { f -> webPlay = null; onPlay(f.url, wp.second, 0L) },
+            onClose = { webPlay = null }
+        )
+    }
 }
 
 @Composable

@@ -157,6 +157,9 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(10_000)
             .setReadTimeoutMs(15_000)
+        // A stream extracted from a web source (WebExtract) only plays with the
+        // headers of the page that minted it (referer / user agent / cookie)
+        WebExtract.headersFor(req.url)?.takeIf { it.isNotEmpty() }?.let { http.setDefaultRequestProperties(it) }
         // W-005/W-007: renderers wrapped for the subtitle and audio delay (no change while both are 0)
         ExoPlayer.Builder(ctx, PlayerSync.wrap(SoftAudio.factory(ctx)))
             .setLoadControl(Mem.loadControl(ctx))
