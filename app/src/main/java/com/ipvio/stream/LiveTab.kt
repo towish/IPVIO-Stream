@@ -168,7 +168,8 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
         out.take(80)
     }
     // Channel number = position in the full playlist (same numbering as the guide)
-    val numOf = remember(liveAll) { liveAll.mapIndexed { i, it -> it.id to (i + 1) }.toMap() }
+    // T-029: Bell numbers with the Québec order (TVA = 103), otherwise positions; same numbers as the player and the guide
+    val numOf = remember(liveAll) { QcOrder.numbers(liveAll) }
     val rawList = when {
         sel == FAV_CAT -> favs
         sel == "ALL" -> live
@@ -445,14 +446,9 @@ fun LiveTab(liveAll: List<Item>, groupsAll: Map<String, List<Item>>, favsAll: Li
                     }
                 ) else LazyColumn(
                     state = chanState,
-                    // Held Down/Up key: at most ~9 steps per second, so a weak box is not flooded with scroll animations and rebinds
-                    modifier = Modifier.onPreviewKeyEvent { e ->
-                        if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.DirectionUp) && e.nativeKeyEvent.repeatCount > 0) {
-                            val now = android.os.SystemClock.uptimeMillis()
-                            LiveHold.lastRepeat = now
-                            if (now - LiveHold.lastStep < 110) true else { LiveHold.lastStep = now; false }
-                        } else false
-                    },
+                    // Held Down/Up key: limited steps per second, so a weak box is not flooded with scroll animations and rebinds;
+                    // faster the longer the key is held (T-030, shared with the player channel menu and the guide)
+                    modifier = Modifier.liveHoldThrottle(),
                     verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)
                 ) {
                     // In own lists the focus moves along with the channel when moving it (key = channel)
@@ -614,7 +610,7 @@ private fun RowScope.ChannelLineContent(item: Item, num: Int, epg: List<EpgEntry
     val nowE = Epg.current(epg)
     val nextE = epg.firstOrNull { nowE != null && it.start >= nowE.end }
     // Design D table: number | logo | name + group | on now | progress | up next | status icons
-    if (num > 0) Text(raw = true, text = "$num", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
+    if (num > 0) Text(raw = true, text = "$num", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, style = TNUM, maxLines = 1, modifier = Modifier.width(40.dp))
     ChannelLogo(item.logo, item.title, dims.logo)
     Column(Modifier.width(168.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -658,10 +654,9 @@ private fun RowScope.ChannelLineContent(item: Item, num: Int, epg: List<EpgEntry
 /** Logo of a channel row. Own composable with plain String parameters, so a focus change of the row skips it (no new image request). */
 @Composable
 private fun ChannelLogo(logo: String?, title: String, size: Dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(DS.RadiusS)).background(DS.Overlay2), contentAlignment = Alignment.Center) {
-        if (logo != null) AsyncImage(logo, null, Modifier.fillMaxSize().padding(6.dp), contentScale = ContentScale.Fit)
-        else Text(raw = true, text = title.take(2).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-    }
+    // T-030: the same badge as the player channel menu and the guide: letters of the name ("TVA", not "CA") when there is
+    // no logo or it does not load
+    ChannelLogoBadge(logo, title, size)
 }
 
 /**

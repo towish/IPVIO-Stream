@@ -49,7 +49,7 @@ import java.util.Locale
 
 /**
  * Loading screen when adding a playlist – deliberately kept calm:
- * dark background, the logo fades in gently and barely noticeably "breathes", below it a fine progress line.
+ * dark background, the logo fades in gently and a light band runs over it (BrandLoader, T-031), below it a fine progress line.
  * If the server knows the size, the line shows the exact state, otherwise a soft light streak glides slowly through.
  * With "Motion: off" everything stays still. If it takes very long: quotes (from 5 min), sayings (from 10 min), hint (from 15 min).
  */
@@ -58,7 +58,6 @@ fun PlaylistLoadingOverlay() {
     PlaylistStore.langAsk?.let { LangPicker(it); return }
     val moving = Look.motion > 0
     val t = rememberInfiniteTransition(label = "load")
-    val breathe by t.animateFloat(0.78f, 1f, infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
     val sweep by t.animateFloat(-0.3f, 1.05f, infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "sweep")
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(if (moving) 700 else 0)) }
@@ -108,7 +107,8 @@ fun PlaylistLoadingOverlay() {
             Modifier.alpha(enter.value).widthIn(max = 760.dp).padding(horizontal = DS.PageX),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            BrandMark(Modifier.size(64.dp).alpha(if (moving) breathe else 1f))
+            // T-031: the animated DubTvP mark instead of a breathing picture
+            BrandLoader(Modifier.size(64.dp), active = moving)
             Spacer(Modifier.height(40.dp))
             Text("Playlist wird geladen", color = Color.White.copy(alpha = 0.92f), fontSize = 20.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp)
             Spacer(Modifier.height(8.dp))

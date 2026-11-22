@@ -1,6 +1,13 @@
 package com.ipvio.stream
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.using
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -36,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
 /*
  * Round 17b – "Cinematic Remake" of the home screen (design "IPVIO Cinematic Remake", picture 1):
@@ -54,6 +62,8 @@ object Billboard {
     var focusCo: LayoutCoordinates? = null
     /** true while the background with the info at the top is really shown (then the big picture pauses). */
     var active by mutableStateOf(false)
+    /** T-032: dominant color of the shown picture (ARGB), or null; tints the background ("ambient color"). */
+    var ambient by mutableStateOf<Int?>(null)
     fun mark(item: Item) {
         if (item.kind == Kind.LIVE) return
         cardFocus = true
@@ -96,26 +106,47 @@ class PivotSpec(private val pivot: Float, private val list: () -> androidx.compo
 /** Full-screen background with the scene image of the title; without an image a gradient from the title color. */
 @Composable
 fun BillboardBackdrop(item: Item?, modifier: Modifier = Modifier) {
-    Box(modifier.background(Bg)) {
+    // T-032: ambient color. The background takes a little of the picture's dominant color and changes softly with it.
+    val amb = Billboard.ambient
+    val target = if (amb == null) Bg else androidx.compose.ui.graphics.lerp(Bg, Color(amb), 0.22f)
+    val tint by androidx.compose.animation.animateColorAsState(target, tween(if (Look.motion == 0) 0 else 700), label = "ambient")
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Box(modifier.background(tint)) {
         // 17c: calm picture (no constant zoom), medium image size (w780) instead of full resolution – saves memory and computing time
-        Crossfade(item, animationSpec = tween(if (Look.motion == 0) 0 else 600), label = "bb") { it0 ->
+        // T-030: 300 ms instead of 600 ms: two large decoded pictures are on screen for half the time
+        Crossfade(item, animationSpec = tween(if (Look.motion == 0) 0 else 300), label = "bb") { it0 ->
             if (it0 != null) {
                 val m = rememberMeta(it0)
                 val url = m?.backdrop?.let { b -> cardBackdrop(b) } ?: m?.poster?.let { p -> cardPoster(p) }
-                if (url != null) AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopEnd)
+                if (url != null) AsyncImage(
+                    url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopEnd,
+                    onSuccess = { st ->
+                        // Read the color off the main thread from a tiny copy of the picture
+                        val d = st.result.drawable
+                        scope.launch { Billboard.ambient = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { AmbientColor.of(d) } }
+                    }
+                )
                 else ArtPlaceholder(it0, Modifier.fillMaxSize(), showTitle = false)
             }
         }
         // Gradients: strong on the left (text), at the bottom into the background (rows), subtle at the top
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Bg, 0.24f to Bg.copy(alpha = .94f), 0.48f to Bg.copy(alpha = .5f), 0.72f to Color.Transparent)))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Bg.copy(alpha = .5f), 0.16f to Color.Transparent, 0.38f to Color.Transparent, 0.58f to Bg.copy(alpha = .82f), 0.78f to Bg)))
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to tint, 0.24f to tint.copy(alpha = .94f), 0.48f to tint.copy(alpha = .5f), 0.72f to Color.Transparent)))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to tint.copy(alpha = .5f), 0.16f to Color.Transparent, 0.38f to Color.Transparent, 0.58f to tint.copy(alpha = .82f), 0.78f to tint)))
     }
 }
 
 /** Info about the selected title at the top left (like the big picture, but for every selected title). */
 @Composable
 fun BillboardInfo(item: Item, modifier: Modifier = Modifier) {
-    Crossfade(item, animationSpec = tween(if (Look.motion == 0) 0 else 450), label = "bbi", modifier = modifier) { c ->
+    // T-030: one after the other (old text out in 120 ms, then the new one in): with a crossfade both titles were visible
+    // on top of each other for a moment
+    AnimatedContent(
+        item, modifier = modifier, label = "bbi", contentAlignment = Alignment.TopStart,
+        transitionSpec = {
+            if (Look.motion == 0) EnterTransition.None togetherWith ExitTransition.None
+            else (fadeIn(tween(220, delayMillis = 120)) togetherWith fadeOut(tween(120))) using null
+        }
+    ) { c ->
         val m = rememberFullMeta(c, rememberMeta(c))
         Column(Modifier.widthIn(max = dpx(980)), verticalArrangement = Arrangement.spacedBy(dpx(14))) {
             Kicker(Lang.tr(kindLabel(c.kind)) + (qualityOf(c)?.let { q -> "  ·  " + q.uppercase() } ?: ""))
@@ -146,3 +177,17 @@ fun Kicker(text: String, raw: Boolean = true) {
     }
 }
 
+
+/** T-032: reads the dominant color of a loaded picture ([AmbientLogic]) from a 16 × 9 copy. Call off the main thread. */
+object AmbientColor {
+    fun of(d: android.graphics.drawable.Drawable): Int? = runCatching {
+        val src = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return null
+        // Hardware bitmaps (Coil's default) cannot be read pixel by pixel: copy to a normal one first
+        val soft = if (android.os.Build.VERSION.SDK_INT >= 26 && src.config == android.graphics.Bitmap.Config.HARDWARE)
+            src.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else src
+        val small = android.graphics.Bitmap.createScaledBitmap(soft, 16, 9, true)
+        val px = IntArray(16 * 9)
+        small.getPixels(px, 0, 16, 0, 0, 16, 9)
+        AmbientLogic.dominant(px)
+    }.getOrNull()
+}

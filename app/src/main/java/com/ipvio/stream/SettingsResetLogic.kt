@@ -50,9 +50,9 @@ object SettingsResetLogic {
         REGION to setOf("lang", "tz_id", "time_fmt"),
         VIEW to setOf("card_size", "card_art", "preview_style", "hero_sec", "per_row", "kino_per_row"),
         // "font" is the key of the old font list; init() reads it as long as "font2" is missing
-        DESIGN to setOf("font2", "font", "text_scale", "show_clock", "fit_x", "fit_y"),
+        DESIGN to setOf("font2", "font", "text_scale", "show_clock", "intro_anim", "fit_x", "fit_y"),
         PLAYER to setOf("aspect"),
-        LIVE to setOf("bundle_live", "channel_row_size")
+        LIVE to setOf("bundle_live", "channel_row_size", "qc_order", "qc_region")
     )
 
     /** Keys of `ipvio_settings` that the reset of [page] removes. */

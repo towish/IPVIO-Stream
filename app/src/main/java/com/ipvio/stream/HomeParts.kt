@@ -468,7 +468,7 @@ fun ChannelNowCard(item: Item, modifier: Modifier, onClick: () -> Unit) {
         Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
             Box(Modifier.size(dpx(58)), contentAlignment = Alignment.Center) {
                 if (item.logo != null) AsyncImage(item.logo, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                else Text(raw = true, text = item.title.take(3).uppercase(), color = Color.White, fontSize = spx(22), fontWeight = FontWeight.ExtraBold)
+                else Text(raw = true, text = remember(item.title) { ChannelMenuLogic.monogram(item.title) }, color = Color.White, fontSize = spx(22), fontWeight = FontWeight.ExtraBold)
                 if (Library.isFav(item.id)) AppIcon(AIcon.Star, DS.Gold, Modifier.align(Alignment.TopEnd), dpx(14))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(2))) {
@@ -483,6 +483,70 @@ fun ChannelNowCard(item: Item, modifier: Modifier, onClick: () -> Unit) {
         val frac = if (nowE == null) 0f else ((System.currentTimeMillis() / 1000 - nowE.start).toFloat() / (nowE.end - nowE.start).coerceAtLeast(1)).coerceIn(0f, 1f)
         Box(Modifier.fillMaxWidth().height(dpx(3)).clip(RoundedCornerShape(50)).background(Color(0x26FFFFFF))) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Accent1))
+        }
+    }
+}
+
+/**
+ * T-033: card of the "Tonight" row: a show of tonight on one of the user's channels (logo, start and end time, title,
+ * channel). OK opens the channel; the menu key or a long OK sets a reminder for a show that has not started yet.
+ */
+@Composable
+fun TonightCard(p: TonightLogic.Pick<Item>, modifier: Modifier, onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    val item = p.channel
+    var f by remember { mutableStateOf(false) }
+    val s by animateFloatAsState(if (f) focusScale(1.06f) else 1f, label = "tonight")
+    val border by animateColorAsState(if (f) Color.White else CardLine, label = "tnb")
+    val shape = RoundedCornerShape(dpx(10))
+    val reminded = Reminders.isSet(item.id, p.start)
+    val now = System.currentTimeMillis() / 1000
+    val running = now in p.start until p.end
+    val remind = { if (now < p.start) Reminders.toggle(ctx, Reminder(item.id, item.title, p.title, p.start, p.end)) }
+    Column(
+        modifier.height(dpx(110)).graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
+            .background(if (f) Color(0xFF1E1E24) else CardBg)
+            .border(if (f) 2.dp else 1.dp, border, shape)
+            .onFocusChanged { f = it.isFocused }
+            .trackFocus()
+            .menuKeys({ remind() }, { remind() })
+            .clickable(onClick = onClick)
+            .padding(start = dpx(14), end = dpx(14), top = dpx(12), bottom = dpx(10))
+    ) {
+        Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
+            ChannelLogoBadge(item.logo, item.title, dpx(58))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(2))) {
+                Text(raw = true, text = hhmm(p.start) + " – " + hhmm(p.end), color = Accent2, fontSize = spx(13), fontWeight = FontWeight.Bold, style = TNUM, maxLines = 1)
+                Text(raw = true, text = p.title, color = Color.White, fontSize = spx(15), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(raw = true, text = item.title, color = Color(0xFFA0A0A8), fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (reminded) AppIcon(AIcon.Bell, Accent2, size = dpx(16))
+        }
+        Spacer(Modifier.height(dpx(8)))
+        val frac = if (!running) 0f else ((now - p.start).toFloat() / (p.end - p.start).coerceAtLeast(1)).coerceIn(0f, 1f)
+        Box(Modifier.fillMaxWidth().height(dpx(3)).clip(RoundedCornerShape(50)).background(Color(0x26FFFFFF))) {
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Accent1))
+        }
+    }
+}
+
+/** T-033: home row "Tonight" ([TonightLogic]). */
+@Composable
+fun TonightRow(title: String, picks: List<TonightLogic.Pick<Item>>, onOpen: (Item) -> Unit) {
+    val g = LocalCardGrid.current
+    val state = RowStates.get("${NavState.tab}|tonight")
+    var cur by remember { mutableIntStateOf(-1) }
+    CenterFollow(state, cur)
+    Column {
+        RowTitle(title, null, null, rowState = state, onAll = null)
+        LazyRow(
+            state = state,
+            contentPadding = PaddingValues(start = RowPadX, end = RowPadX, top = dpx(30), bottom = dpx(30)),
+            horizontalArrangement = Arrangement.spacedBy(g.gap)
+        ) {
+            itemsIndexed(picks, key = { _, p -> p.channel.id + "|" + p.start }) { i, p ->
+                TonightCard(p, Modifier.width(g.chan).onFocusChanged { st -> if (st.hasFocus) cur = i }) { onOpen(p.channel) }
+            }
         }
     }
 }
@@ -899,7 +963,7 @@ fun ChannelDetailCard(item: Item, modifier: Modifier, reorder: List<Item>? = nul
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
             Box(Modifier.size(dpx(78)).clip(RoundedCornerShape(dpx(10))).background(Color(0x1FFFFFFF)).padding(dpx(8)), contentAlignment = Alignment.Center) {
                 if (item.logo != null) AsyncImage(item.logo, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                else Text(raw = true, text = item.title.take(3).uppercase(), color = Color.White, fontSize = spx(22), fontWeight = FontWeight.ExtraBold)
+                else Text(raw = true, text = remember(item.title) { ChannelMenuLogic.monogram(item.title) }, color = Color.White, fontSize = spx(22), fontWeight = FontWeight.ExtraBold)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dpx(4))) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(8))) {

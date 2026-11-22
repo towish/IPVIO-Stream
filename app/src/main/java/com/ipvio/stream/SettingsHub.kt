@@ -18,6 +18,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalConfiguration
@@ -62,11 +63,11 @@ private val CATS = listOf(
     Cat(AIcon.Download, "Listen importieren", "Letterboxd, MyAnimeList, Trakt"),
     Cat(AIcon.Live, "Boomer Mode", "Ganz einfach: große Kacheln zum Auswählen"),
     Cat(AIcon.Sliders, "Startseite anpassen", "Reihen und Widgets wählen und ordnen"),
-    Cat(AIcon.Info, "Über IPVIO Stream", "Version, Quellen, Updates"),
+    Cat(AIcon.Info, "Über DubTvP", "Version, Quellen, Updates"),
     // Resets every settings tab at once (each tab 0..8 has its own reset for just that tab)
     Cat(AIcon.Warning, "Alles zurücksetzen", "Alle Einstellungen auf Standard"),
     // Donate is always the very last entry
-    Cat(AIcon.HeartFilled, "Spende", "Unterstütze IPVIO Stream")
+    Cat(AIcon.HeartFilled, "Spende", "Unterstütze DubTvP")
 )
 
 /** Open a settings page directly (e.g. profile circle at the top with only one profile: page "Profiles"). */
@@ -169,11 +170,13 @@ fun SettingsHub(onAdd: () -> Unit, reload: () -> Unit) {
     }
 }
 
-/** Color per area: same structure as the home screen tiles (gradient, icon in the area color, arrow). */
-private fun catColors(i: Int): Triple<Color, Color, Color> {
-    val h = (i * 360f / CATS.size + 18f) % 360f
-    return Triple(Color.hsv(h, 0.62f, 0.34f), Color.hsv(h, 0.70f, 0.14f), Color.hsv(h, 0.45f, 1f))
-}
+/**
+ * Colors of a settings area: same structure as the home screen tiles (gradient, icon, arrow). T-031: neutral surface with
+ * the icon in the accent color for every area (before: a rainbow over the 16 tiles, which drowned the brand color).
+ */
+@Suppress("UNUSED_PARAMETER")
+private fun catColors(i: Int): Triple<Color, Color, Color> =
+    Triple(lerp(Bg, Color.White, 0.075f), lerp(Bg, Color.White, 0.025f), Accent1)
 
 @Composable
 private fun SettingsCard(cat: Cat, idx: Int, modifier: Modifier, onClick: () -> Unit) {
@@ -469,7 +472,7 @@ private fun GeneralPage(ctx: Context) {
     SectionTitle("Start")
     ToggleRow(
         "Beim Einschalten des Geräts öffnen",
-        "IPVIO Stream startet automatisch, sobald der Fernseher oder die Box hochgefahren ist.",
+        "DubTvP startet automatisch, sobald der Fernseher oder die Box hochgefahren ist.",
         General.autoStart
     ) { on ->
         General.setAutoStart(ctx, on)
@@ -532,7 +535,7 @@ internal fun openOverlaySettings(ctx: Context) {
 /** Shows the result of the permission check so the "Prüfen" button gives visible feedback. */
 internal fun reportOverlayState(ctx: Context) {
     val msg = if (canStartFromBoot(ctx)) "Berechtigung erteilt. Der Autostart ist bereit."
-    else "Berechtigung fehlt noch. Bitte „Einstellung öffnen“ wählen und IPVIO Stream erlauben."
+    else "Berechtigung fehlt noch. Bitte „Einstellung öffnen“ wählen und DubTvP erlauben."
     android.widget.Toast.makeText(ctx, Lang.tr(msg), android.widget.Toast.LENGTH_LONG).show()
 }
 
@@ -829,6 +832,7 @@ private fun DesignPage(ctx: Context) {
             ChoiceChip(n, Look.motion == i, onFocus = { hover(it, Lang.tr(n)) { DesignPreview.motion = i } }) { save(motion = i) }
         }
     }
+    ToggleRow("Intro beim Start", "Das animierte DubTvP-Logo beim Öffnen der App, etwa 3 Sekunden. Jede Taste überspringt es. Bei Animationen „Aus“ entfällt es.", General.introAnim) { General.setIntroAnim(ctx, it) }
     SectionTitle("Anzeigegröße")
     Look.SCALES.indices.chunked(3).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -914,7 +918,7 @@ private fun DiagPage(ctx: Context, reload: () -> Unit) {
             val text = lines.joinToString("\n") { it.first + ": " + it.second }
             runCatching {
                 val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
-                cm?.setPrimaryClip(android.content.ClipData.newPlainText("IPVIO Diagnose", text))
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("DubTvP Diagnose", text))
             }
         }
     }
@@ -1235,6 +1239,13 @@ private fun LivePage(ctx: Context) {
     val rowSizes = listOf("Klein", "Normal", "Groß")
     SelectRow("Senderzeilen", rowSizes[General.channelRowSize], rowSizes, General.channelRowSize) { General.setChannelRowSize(ctx, it) }
     Hint("Kleinere Zeilen zeigen mehr Sender auf einmal, das hilft auf großen Fernsehern. Größere Zeilen lassen sich aus der Ferne leichter lesen.")
+    // T-026: Québec first, in the Bell Fibe order
+    ToggleRow("Québec zuerst (Reihenfolge wie Bell)", "Die Sender aus Québec und Kanada stehen oben, in der Reihenfolge von Bell Fibe: ICI Radio-Canada, Noovo, TVA, Télé-Québec, RDS … Alle anderen Sender folgen in der Reihenfolge des Anbieters.", General.qcOrder) { General.setQcOrder(ctx, it) }
+    if (General.qcOrder) {
+        val regions = listOf("Montréal", "Stadt Québec", "Sherbrooke", "Gatineau / Outaouais")
+        SelectRow("Region der Lokalsender", regions[General.qcRegion], regions, General.qcRegion) { General.setQcRegion(ctx, it) }
+        Hint("Hat ein Sender mehrere Regionalversionen (z. B. TVA Québec, TVA Montréal), steht die gewählte Region zuerst.")
+    }
     Hint("Die App sucht die Programmdaten automatisch (Xtream-Schnittstelle oder XMLTV-Adresse aus der Playlist). Wenn dein Anbieter eine eigene XMLTV-Adresse nennt, trage sie hier ein.")
     Field(url, { url = it }, "https://…/xmltv.php?username=…&password=…")
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1535,10 +1546,10 @@ private fun ApiKeysPhoneEntry(ctx: Context, onKeys: (Map<String, String>) -> Uni
 
 @Composable
 private fun AboutPage(ctx: Context) {
-    Text("IPVIO Stream · Version " + appVersion(ctx), color = Color.White, fontSize = 18.sp)
-    Hint("IPVIO Stream ist ein Player und liefert selbst keine Inhalte. Nutze nur Quellen, für die du eine Berechtigung hast.")
+    Text("DubTvP · Version " + appVersion(ctx), color = Color.White, fontSize = 18.sp)
+    Hint("DubTvP ist ein Player und liefert selbst keine Inhalte. Nutze nur Quellen, für die du eine Berechtigung hast.")
     Hint("Dieses Produkt verwendet die TMDB-API, wird aber nicht von TMDB unterstützt oder zertifiziert. Wertungen: OMDb. Intro-Zeiten: TheIntroDB.")
-    Hint("IPVIO Stream ist freie Software unter der GNU General Public License v3 (GPL-3.0). Verwendete Bibliotheken: AndroidX/Jetpack Compose, Media3 (Apache 2.0), OkHttp, Coil (Apache 2.0), Jellyfin FFmpeg-Decoder (GPL-3.0), Schriften Outfit und Inter (SIL Open Font License).")
+    Hint("DubTvP ist freie Software unter der GNU General Public License v3 (GPL-3.0). Verwendete Bibliotheken: AndroidX/Jetpack Compose, Media3 (Apache 2.0), OkHttp, Coil (Apache 2.0), Jellyfin FFmpeg-Decoder (GPL-3.0), Schriften Outfit und Inter (SIL Open Font License).")
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PillButton("Systemeinstellungen der App") {
             runCatching {

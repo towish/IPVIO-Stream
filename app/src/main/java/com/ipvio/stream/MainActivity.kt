@@ -67,7 +67,30 @@ class MainActivity : ComponentActivity() {
         )
         ScreenAwake.attach(this)
         intent?.getStringExtra(Reminders.EXTRA_CH)?.let { AppNav.openChannel = it }
+        // T-036: DubTvP start intro, only on a fresh start (not after a rotation); a reminder goes straight to the channel
+        if (savedInstanceState == null) {
+            BrandIntroState.active = BrandIntroLogic.shouldShow(true, General.introAnim, Look.motion, AppNav.openChannel != null)
+        }
         setContent { App(pick) }
+    }
+
+    /** Key code whose release still belongs to the key press that ended the start intro (T-036); -1 = none. */
+    private var swallowUp = -1
+
+    /**
+     * T-036: while the start intro plays, any key ends it and is not passed on (Back does not leave the app). The rest of
+     * that key press (repeats and the release) is swallowed too, so it cannot trigger anything underneath.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (BrandIntroState.active) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN) { BrandIntroState.active = false; swallowUp = event.keyCode }
+            return true
+        }
+        if (swallowUp != -1 && event.keyCode == swallowUp) {
+            if (event.action == android.view.KeyEvent.ACTION_UP) swallowUp = -1
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     /** Reminder tapped while the app is already running: open the channel. */
@@ -164,6 +187,8 @@ fun App(pick: Boolean = false) {
         UpdatePromptHost()
         // First start without a playlist: one non-blocking card that checks for updates (T-014)
         if (picked) UpdateCardHost()
+        // T-036: start intro above everything; the app loads underneath
+        if (BrandIntroState.active) BrandIntro { BrandIntroState.active = false }
     }
 }
 
@@ -249,7 +274,13 @@ private fun AppContent() {
     }
 
     val all = PlaylistStore.channels
-    val liveAll = remember(all) { all.filter { it.kind == Kind.LIVE } }
+    // T-026: Québec first (Bell Fibe order) when the setting is on. Sorting runs in the background; until it is done the
+    // provider order shows (a cached result is used right away, so this only happens once per playlist).
+    val qc = QcOrder.key()
+    val liveRaw = remember(all) { all.filter { it.kind == Kind.LIVE } }
+    val liveAll by produceState(if (qc < 0) liveRaw else QcOrder.peek(all, qc) ?: liveRaw, all, qc) {
+        value = if (qc < 0) liveRaw else QcOrder.peek(all, qc) ?: withContext(Dispatchers.Default) { QcOrder.live(all, qc, liveRaw) }
+    }
     // Do not fall into the screensaver while downloading and parsing the playlist
     KeepScreenOn("playlist", PlaylistStore.loading)
     // Genre detection in the background; restarts cleanly with every new list (reload, language filter, parental control)

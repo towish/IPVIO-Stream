@@ -227,6 +227,9 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
     var buffered by remember { mutableLongStateOf(0L) }
     var speedIdx by remember { mutableIntStateOf(2) }
     var digitBuf by remember { mutableStateOf("") }
+    // T-035: cinema mode (hold Back): no channel banner, only a discreet clock; Back held again leaves it
+    var cinema by remember { mutableStateOf(false) }
+    var backHeld by remember { mutableStateOf(false) }
     var lastChId by remember { mutableStateOf<String?>(null) }
     var behindSec by remember { mutableLongStateOf(0L) }
     var sleepIdx by remember { mutableIntStateOf(0) }
@@ -289,6 +292,8 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
 
     val curItem = remember(cur.itemId, liveAll, zapSrc) { liveAll.firstOrNull { it.id == cur.itemId } ?: zapSrc.firstOrNull { it.id == cur.itemId } }
     val curIdx = remember(cur.itemId, zapSrc) { zapSrc.indexOfFirst { it.id == cur.itemId } }
+    // T-029: number shown in the banner = the channel number (same as Live TV, channel menu, guide and digit entry)
+    val curNum = remember(cur.itemId, liveAll, zapSrc) { QcOrder.numbers(liveAll.ifEmpty { zapSrc })[cur.itemId] ?: 0 }
     val step = AppSettings.seekStep * 1000L
     val firstFocus = if (cur.live) liveFirst else playBtn
 
@@ -373,7 +378,11 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
     fun commitDigits() {
         val n = digitBuf.toIntOrNull() ?: 0
         digitBuf = ""
-        if (n in 1..zapSrc.size) switchTo(zapSrc[n - 1], zapSrc)
+        // T-029: the typed number is the channel number shown in Live TV, the channel menu and the guide (Bell numbers
+        // with the Québec order: 103 = TVA). Before, it was the position in the current list, which differed per category.
+        val hit = if (n > 0) QcOrder.byNumber(liveAll.ifEmpty { zapSrc }, n) else null
+        if (hit != null) switchTo(hit, if (zapSrc.any { it.id == hit.id }) zapSrc else liveAll)
+        else if (n in 1..zapSrc.size && liveAll.isEmpty()) switchTo(zapSrc[n - 1], zapSrc)
         else if (n > 0) flash = Flash(null, "Kein Kanal mit dieser Nummer")
     }
 
@@ -1031,7 +1040,14 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
                 interact = System.currentTimeMillis()
                 // Handle back ourselves: otherwise Compose first only removes the focus and the menu stays open
                 if (e.key == Key.Back) {
-                    if (e.type == KeyEventType.KeyUp) handleBack()
+                    // T-035: holding Back (key repeat) switches the cinema mode instead of going back
+                    if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount > 0 && !backHeld &&
+                        panel == Panel.NONE && !showChannels && !showGuide && !controls) {
+                        backHeld = true
+                        cinema = !cinema
+                        flash = Flash(null, if (cinema) "Kinomodus an" else "Kinomodus aus")
+                    }
+                    if (e.type == KeyEventType.KeyUp) { if (backHeld) backHeld = false else handleBack() }
                     true
                 } else false
             }
@@ -1071,7 +1087,8 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
                     cur.live && panel == Panel.NONE && !showChannels && !showGuide && digitOf(k) >= 0 -> {
                         val d = digitOf(k)
                         if (digitBuf.isEmpty() && d == 0) lastChannel()
-                        else if (digitBuf.length < 4) { digitBuf += d }
+                        // 5 digits: channels without a Bell slot are numbered from 1000 up (T-029)
+                        else if (digitBuf.length < 5) { digitBuf += d }
                         true
                     }
                     !cur.live && !controls && panel == Panel.NONE && !showChannels && !showGuide && digitOf(k) >= 0 && player.duration > 0 -> {
@@ -1197,7 +1214,8 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
 
         // ---------------------------------------------------------------- Messages
         if (buffering && msg == null && !showGuide) {
-            Spinner(Accent2, Modifier.align(Alignment.Center).size(48.dp))
+            // T-031: buffering shows the animated DubTvP mark
+            BrandLoader(Modifier.align(Alignment.Center).size(52.dp))
         }
         // Hidden while the TV guide is open: the error box would sit on top of the guide (it comes back when the guide closes)
         msg?.takeIf { !Boomer.enabled && !showGuide }?.let { m ->
@@ -1276,17 +1294,29 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
             )
         }
 
+        // T-035: cinema mode: only a discreet clock at the bottom right
+        if (cinema && !controls && panel == Panel.NONE && !showChannels && !showGuide) {
+            val nowSec by produceState(System.currentTimeMillis() / 1000) { while (true) { value = System.currentTimeMillis() / 1000; delay(15_000) } }
+            Text(raw = true, text = hhmm(nowSec), color = Color.White.copy(alpha = 0.38f), fontSize = 18.sp, fontWeight = FontWeight.Medium, style = TNUM,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = PT.MarginX, bottom = PT.MarginY))
+        }
+
         if (digitBuf.isNotEmpty()) {
-            Text(
-                digitBuf, color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = PT.MarginY, end = PT.MarginX)
-                    .clip(RoundedCornerShape(DS.RadiusM)).background(Color(0xCC000000)).padding(horizontal = 28.dp, vertical = 12.dp)
-            )
+            // T-029: the channel that the typed number opens is named under the digits (as on a cable box)
+            val target = remember(digitBuf, liveAll) { digitBuf.toIntOrNull()?.let { QcOrder.byNumber(liveAll.ifEmpty { zapSrc }, it) } }
+            Column(
+                Modifier.align(Alignment.TopEnd).padding(top = PT.MarginY, end = PT.MarginX)
+                    .clip(RoundedCornerShape(DS.RadiusM)).background(Color(0xCC000000)).padding(horizontal = 28.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(raw = true, text = digitBuf, color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Bold, style = TNUM)
+                if (target != null) Text(raw = true, text = target.title, color = Tok.TextMid, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 320.dp))
+            }
         }
 
         // Short channel banner when switching
-        if (banner && cur.live && !Boomer.enabled && !controls && !showChannels && !showGuide) {
-            LiveBanner(curItem, cur.title, if (curIdx >= 0) curIdx + 1 else 0, epg, Modifier.align(Alignment.BottomStart))
+        if (banner && cur.live && !Boomer.enabled && !controls && !showChannels && !showGuide && !cinema) {
+            LiveBanner(curItem, cur.title, curNum, epg, Modifier.align(Alignment.BottomStart))
         }
         if (Boomer.enabled) BoomerPlayerOverlay(cur.title, bannerTick, boomerFail) { onBack() }
 
@@ -1381,7 +1411,7 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
                         .padding(start = PT.MarginX, end = PT.MarginX, bottom = PT.MarginY)
                 ) {
                     if (cur.live) {
-                        LiveInfoBlock(curItem, cur.title, if (curIdx >= 0) curIdx + 1 else 0, epg)
+                        LiveInfoBlock(curItem, cur.title, curNum, epg)
                         Spacer(Modifier.height(20.dp))
                         // Recently watched channels (Up from the buttons): switch back with one press
                         RecentChannelsRow(liveAll, cur.itemId, setLabel) { switchTo(it, zapSrc) }

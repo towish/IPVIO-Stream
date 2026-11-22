@@ -39,7 +39,8 @@ android {
         versionCode = 7
         versionName = "1.4.2"
         // Name under the icon; the debug build overrides it (see buildTypes)
-        manifestPlaceholders["appLabel"] = "IPVIO Stream"
+        // T-031: the app is called DubTvP; the application ID com.ipvio.stream stays (updates and user data)
+        manifestPlaceholders["appLabel"] = "DubTvP"
 
         buildConfigField("String", "TMDB_KEY", "\"${secret("TMDB_KEY")}\"")
         buildConfigField("String", "OMDB_KEY", "\"${secret("OMDB_KEY")}\"")
@@ -62,7 +63,7 @@ android {
         // Own name ("IPVIO Test") so the test build is recognizable next to the release app.
         debug {
             applicationIdSuffix = ".test"
-            manifestPlaceholders["appLabel"] = "IPVIO Test"
+            manifestPlaceholders["appLabel"] = "DubTvP Test"
         }
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
